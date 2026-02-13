@@ -400,6 +400,7 @@ class PVRegelung extends IPSModule
 
         $maxImport = (float)$CFG['surplus']['max_grid_import_w'];
         [$manualActive, $manualPowerW, $manualTargetSoc, $carSoc] = $this->readManualWallboxConfig($CFG);
+        $rodManualOn = $this->readHeatingRodManualOn($CFG);
 
         if ($manualActive) {
             $manualDone = $carSoc >= $manualTargetSoc;
@@ -434,7 +435,7 @@ class PVRegelung extends IPSModule
             return;
         }
 
-        if ($importW > $maxImport) {
+        if ($importW > $maxImport && !$rodManualOn) {
             $state = $this->wallboxSoftOff($CFG, $state);
             $this->applyHeatpump($CFG, $state, false);
             $this->applyHeatingRodStage($CFG, $state, 0);
@@ -459,7 +460,7 @@ class PVRegelung extends IPSModule
         $wbOn = false;
         $wbA = 0;
 
-        if ($exportW < $deadband) {
+        if ($exportW < $deadband && !$rodManualOn) {
             [$wbOn, $wbA, $state] = $this->planWallboxRamped($CFG, $state, $remainingW);
 
             $this->applyHeatpump($CFG, $state, false);
@@ -490,7 +491,6 @@ class PVRegelung extends IPSModule
         $weeklyWindow = $this->isHeatingRodWindow($CFG['heating_rod']['weekly'], $state);
         $rodAllowedByTemp = $boilerTemp >= (float)$CFG['boiler']['rod_min_start_temp_c'];
         $rodAutoMode = $this->readHeatingRodAutoMode($CFG);
-        $rodManualOn = $this->readHeatingRodManualOn($CFG);
         $rodTargetC = $this->readBoilerRodTargetC($CFG);
         if ($boilerTemp >= $rodTargetC) {
             $state['rod_last_target_reached_ts'] = time();
@@ -1028,6 +1028,7 @@ class PVRegelung extends IPSModule
         $this->ensureProfileInt('PV_A', ' A', 0, 0, 0, 1);
         $this->ensureProfileInt('PV_WI', ' W', 0, 0, 22000, 100);
         $this->ensureProfileInt('PV_DAYS_1_20', ' Tage', 0, 1, 20, 1);
+        $this->ensureProfileInt('PV_STAGE', '', 0, 0, 3, 1);
 
         $root = $this->ensureCategoryByIdent($this->InstanceID, 'pv_ui_root', (string)($CFG['ui']['root_name'] ?? 'PV Regelung'));
 
@@ -1089,7 +1090,7 @@ class PVRegelung extends IPSModule
         $this->ensureVariableByIdent($cHeat, 'pv_dbg_weekly_active', 'Weekly Heizstab aktiv', 0, '~Switch');
         $this->ensureVariableByIdent($cHeat, 'pv_dbg_hp_on', 'Wärmepumpe an', 0, '~Switch');
         $this->ensureVariableByIdent($cHeat, 'pv_dbg_rod_on', 'Heizstab aktiv', 0, '~Switch');
-        $this->ensureVariableByIdent($cHeat, 'pv_dbg_rod_stage', 'Heizstab Stufe', 1, '~Intensity.100');
+        $this->ensureVariableByIdent($cHeat, 'pv_dbg_rod_stage', 'Heizstab Stufe', 1, 'PV_STAGE');
         $this->ensureVariableByIdent($cHeat, 'pv_dbg_rod1_on', 'Heizstab 1 aktiv', 0, '~Switch');
         $this->ensureVariableByIdent($cHeat, 'pv_dbg_rod2_on', 'Heizstab 2 aktiv', 0, '~Switch');
         $this->ensureVariableByIdent($cHeat, 'pv_dbg_rod3_on', 'Heizstab 3 aktiv', 0, '~Switch');
