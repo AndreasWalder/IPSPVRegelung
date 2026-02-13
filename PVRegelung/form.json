@@ -267,29 +267,37 @@
                 },
                 {
                     "type": "SelectVariable",
-                    "name": "HeatingRodPowerPercentVarID",
-                    "caption": "Heizstab Leistung % (0 = deaktiviert)"
+                    "name": "HeatingRodSwitchVarID1",
+                    "caption": "Heizstab 1 Bool"
+                },
+                {
+                    "type": "SelectVariable",
+                    "name": "HeatingRodSwitchVarID2",
+                    "caption": "Heizstab 2 Bool"
+                },
+                {
+                    "type": "SelectVariable",
+                    "name": "HeatingRodSwitchVarID3",
+                    "caption": "Heizstab 3 Bool"
+                },
+                {
+                    "type": "SelectVariable",
+                    "name": "RodTargetVarID",
+                    "caption": "Solltemperatur Boiler aus Visu (optional)"
                 },
                 {
                     "type": "NumberSpinner",
-                    "name": "HeatingRodMaxPowerW",
-                    "caption": "Max Leistung (W)",
+                    "name": "HeatingRodPowerPerUnitW",
+                    "caption": "Leistung je Heizstab (W)",
                     "minimum": 0,
                     "maximum": 10000
                 },
                 {
                     "type": "NumberSpinner",
                     "name": "HeatingRodMinSurplusW",
-                    "caption": "Min Überschuss (W)",
+                    "caption": "Min Überschuss Start (W)",
                     "minimum": 0,
-                    "maximum": 10000
-                },
-                {
-                    "type": "NumberSpinner",
-                    "name": "HeatingRodMinPercent",
-                    "caption": "Min % wenn aktiv",
-                    "minimum": 0,
-                    "maximum": 100
+                    "maximum": 20000
                 },
                 {
                     "type": "NumberSpinner",
