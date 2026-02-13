@@ -12,7 +12,7 @@
                     "type": "NumberSpinner",
                     "name": "LoopSeconds",
                     "caption": "Loop (Sekunden)",
-                    "minimum": 10,
+                    "minimum": 5,
                     "maximum": 300
                 },
                 {
