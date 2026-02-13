@@ -209,7 +209,7 @@ class PVRegelung extends IPSModule
                 $this->runLoop();
                 break;
             case 'pv_rod_days_since_target':
-                $this->setHeatingVarByIdent('pv_rod_days_since_target', max(0, min(60, (int)$Value)));
+                $this->setHeatingVarByIdent('pv_rod_days_since_target', max(1, min(20, (int)$Value)));
                 $this->runLoop();
                 break;
             case 'pv_boiler_target_c':
@@ -966,10 +966,10 @@ class PVRegelung extends IPSModule
 
     private function readHeatingRodDaysSinceTargetReached(array $CFG): int
     {
-        $default = max(0, min(60, (int)($CFG['heating_rod']['weekly']['days_after_target_reached'] ?? 7)));
+        $default = max(1, min(20, (int)($CFG['heating_rod']['weekly']['days_after_target_reached'] ?? 7)));
         $root = $this->ensureCategoryByIdent($this->InstanceID, 'pv_ui_root', (string)($CFG['ui']['root_name'] ?? 'PV Regelung'));
         $cHeat = $this->ensureCategoryByIdent($root, 'pv_ui_heat', 'Heizung');
-        return max(0, min(60, (int)$this->readVarByIdent($cHeat, 'pv_rod_days_since_target', $default)));
+        return max(1, min(20, (int)$this->readVarByIdent($cHeat, 'pv_rod_days_since_target', $default)));
     }
 
     private function readBoilerRodTargetC(array $CFG): float
@@ -1027,6 +1027,7 @@ class PVRegelung extends IPSModule
         $this->ensureProfileFloat('PV_PCT', ' %', 0, 0.0, 100.0, 1.0);
         $this->ensureProfileInt('PV_A', ' A', 0, 0, 0, 1);
         $this->ensureProfileInt('PV_WI', ' W', 0, 0, 22000, 100);
+        $this->ensureProfileInt('PV_DAYS_1_20', ' Tage', 0, 1, 20, 1);
 
         $root = $this->ensureCategoryByIdent($this->InstanceID, 'pv_ui_root', (string)($CFG['ui']['root_name'] ?? 'PV Regelung'));
 
@@ -1081,9 +1082,9 @@ class PVRegelung extends IPSModule
         $this->ensureActionVariableByIdent($cHeat, 'pv_manual_rod_on', 'Heizstab Manuell EIN', 0, '~Switch');
         $daysId = @IPS_GetObjectIDByIdent('pv_rod_days_since_target', $cHeat);
         $hadDaysVar = ($daysId !== false);
-        $daysId = $this->ensureActionVariableByIdent($cHeat, 'pv_rod_days_since_target', 'Tage seit letzter Solltemperatur', 1, 'Timer.Day');
+        $daysId = $this->ensureActionVariableByIdent($cHeat, 'pv_rod_days_since_target', 'Tage seit letzter Solltemperatur', 1, 'PV_DAYS_1_20');
         if (!$hadDaysVar) {
-            SetValue((int)$daysId, max(0, min(60, (int)$CFG['heating_rod']['weekly']['days_after_target_reached'])));
+            SetValue((int)$daysId, max(1, min(20, (int)$CFG['heating_rod']['weekly']['days_after_target_reached'])));
         }
         $this->ensureVariableByIdent($cHeat, 'pv_dbg_weekly_active', 'Weekly Heizstab aktiv', 0, '~Switch');
         $this->ensureVariableByIdent($cHeat, 'pv_dbg_hp_on', 'Wärmepumpe an', 0, '~Switch');
@@ -1125,7 +1126,7 @@ class PVRegelung extends IPSModule
         if (isset($v['houseLoadW']))    $this->setVarByIdent($cLoad, 'pv_house_load_kw', $this->wToKw((float)$v['houseLoadW']));
         if (isset($v['boilerTemp']))    $this->setVarByIdent($cLoad, 'pv_boiler_temp', (float)$v['boilerTemp']);
         if (isset($v['boilerTargetC'])) $this->setVarByIdent($cHeat, 'pv_boiler_target_c', (float)$v['boilerTargetC']);
-        if (isset($v['rodDaysSinceTarget'])) $this->setVarByIdent($cHeat, 'pv_rod_days_since_target', max(0, min(60, (int)$v['rodDaysSinceTarget'])));
+        if (isset($v['rodDaysSinceTarget'])) $this->setVarByIdent($cHeat, 'pv_rod_days_since_target', max(1, min(20, (int)$v['rodDaysSinceTarget'])));
 
         if (isset($v['wallboxChargeW'])) $this->setVarByIdent($cWb, 'pv_wb_power_kw', $this->wToKw((float)$v['wallboxChargeW']));
         if (isset($v['wbA'])) $this->setVarByIdent($cWb, 'pv_wb_target_a', (int)$v['wbA']);
@@ -1187,7 +1188,7 @@ class PVRegelung extends IPSModule
     {
         if (!($weeklyCfg['enabled'] ?? false)) return false;
 
-        $days = max(0, (int)($weeklyCfg['days_after_target_reached'] ?? 7));
+        $days = max(1, min(20, (int)($weeklyCfg['days_after_target_reached'] ?? 7)));
         $start = (string)($weeklyCfg['start_hhmm'] ?? '10:00');
         $end   = (string)($weeklyCfg['end_hhmm'] ?? '16:00');
 
