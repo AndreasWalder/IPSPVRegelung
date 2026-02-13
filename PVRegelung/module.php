@@ -29,6 +29,7 @@ declare(strict_types=1);
  * 2026-02-13: v1.10 — Fix Wallbox-Abschaltung: Bei dauerhaft zu wenig Überschuss wird nach Soft-Off-Delay sicher ausgeschaltet
  * 2026-02-13: v1.11 — Hausverbrauch: Batterie-Leistung als signed Wert behandelt
  *                  (Entladung wird addiert, Ladung wird abgezogen)
+ * 2026-02-13: v1.12 — Loop-Intervall Standard auf 10s gesetzt; Mindestgrenze ebenfalls 10s.
  */
 
 class PVRegelung extends IPSModule
@@ -37,7 +38,7 @@ class PVRegelung extends IPSModule
     {
         parent::Create();
 
-        $this->RegisterPropertyInteger('LoopSeconds', 15);
+        $this->RegisterPropertyInteger('LoopSeconds', 10);
         $this->RegisterPropertyBoolean('AutoRunOnStart', false);
 
         $this->RegisterPropertyInteger('GridMeterID', 52080);
@@ -133,7 +134,7 @@ class PVRegelung extends IPSModule
         parent::ApplyChanges();
 
         $loop = $this->ReadPropertyInteger('LoopSeconds');
-        $loop = max(5, min(300, $loop));
+        $loop = max(10, min(300, $loop));
         $this->SetTimerInterval('Loop', $loop * 1000);
 
         $CFG = $this->buildCfg();
@@ -933,7 +934,7 @@ class PVRegelung extends IPSModule
 
     private function ensureTimer(int $seconds): void
     {
-        $seconds = max(5, min(300, $seconds));
+        $seconds = max(10, min(300, $seconds));
         $this->SetTimerInterval('Loop', $seconds * 1000);
     }
 
