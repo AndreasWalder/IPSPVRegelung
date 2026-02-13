@@ -26,6 +26,7 @@ declare(strict_types=1);
  * 2026-02-13: v1.7 — Zusatz-Output: Netz (gefiltert) invertiert (Vorzeichen umdrehen)
  * 2026-02-13: v1.8 — export_deadband_w wirkt nur noch auf WP/Heizstab (Wallbox inkl. Phase läuft immer, außer bei Import-Limit)
  * 2026-02-13: v1.9 — UI: zusätzliche selbst erstellte Variable „Netz (gefiltert, invertiert)“ ergänzt
+ * 2026-02-13: v1.10 — Fix Wallbox-Abschaltung: Bei dauerhaft zu wenig Überschuss wird nach Soft-Off-Delay sicher ausgeschaltet
  */
 
 class PVRegelung extends IPSModule
@@ -549,7 +550,7 @@ class PVRegelung extends IPSModule
                 return [true, $newA, $state];
             }
 
-            if ($canTurnOff && (($now - $defSince) >= $grace)) {
+            if ((($now - $defSince) >= $grace)) {
                 return [false, 0, $state];
             }
 
