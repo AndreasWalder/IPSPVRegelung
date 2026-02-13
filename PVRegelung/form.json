@@ -107,14 +107,6 @@
                 },
                 {
                     "type": "NumberSpinner",
-                    "name": "RodTargetC",
-                    "caption": "Heizstab Zieltemperatur (°C)",
-                    "digits": 1,
-                    "minimum": 0,
-                    "maximum": 90
-                },
-                {
-                    "type": "NumberSpinner",
                     "name": "RodMinStartTempC",
                     "caption": "Heizstab min. Starttemp (°C)",
                     "digits": 1,
@@ -281,9 +273,8 @@
                     "caption": "Heizstab 3 Bool"
                 },
                 {
-                    "type": "SelectVariable",
-                    "name": "RodTargetVarID",
-                    "caption": "Solltemperatur Boiler aus Visu (optional)"
+                    "type": "Label",
+                    "label": "Solltemperatur über die Visu-Variable \"Boiler Solltemperatur\" in der UI-Kategorie \"Heizung\" einstellen."
                 },
                 {
                     "type": "NumberSpinner",

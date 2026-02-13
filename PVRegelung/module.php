@@ -49,6 +49,8 @@ declare(strict_types=1);
  * 2026-02-13: v1.24 — UI-Bereinigung: separate Wallbox-Freigabe-Variable entfernt; Wallbox-Regelung läuft wieder ohne zusätzlichen UI-Schalter.
  * 2026-02-13: v1.25 — Heizstab weekly auf 3x Bool-Ausgänge umgestellt (statt %), Auto-Modus + Boiler-Soll aus Visu,
  *                  Startschwelle Überschuss einstellbar (Default 9kW), Weekly-Autostart bleibt erhalten.
+ * 2026-02-13: v1.26 — Boiler-Solltemperatur ausschließlich als editierbare Visu-Variable „Boiler Solltemperatur“
+ *                  im UI; Konfigurationsfelder „Heizstab Zieltemperatur“ und externe Soll-Var-ID entfernt.
  */
 
 class PVRegelung extends IPSModule
@@ -71,7 +73,6 @@ class PVRegelung extends IPSModule
 
         $this->RegisterPropertyInteger('BoilerTempVarID', 31429);
         $this->RegisterPropertyFloat('HpTargetC', 50.0);
-        $this->RegisterPropertyFloat('RodTargetC', 60.0);
         $this->RegisterPropertyFloat('RodMinStartTempC', 50.0);
 
         $this->RegisterPropertyInteger('BatterySocVarID', 49601);
@@ -107,7 +108,6 @@ class PVRegelung extends IPSModule
         $this->RegisterPropertyInteger('HeatingRodSwitchVarID1', 0);
         $this->RegisterPropertyInteger('HeatingRodSwitchVarID2', 0);
         $this->RegisterPropertyInteger('HeatingRodSwitchVarID3', 0);
-        $this->RegisterPropertyInteger('RodTargetVarID', 0);
         $this->RegisterPropertyInteger('HeatingRodPowerPerUnitW', 3000);
         $this->RegisterPropertyInteger('HeatingRodMinSurplusW', 9000);
         $this->RegisterPropertyInteger('HeatingRodMinOnSeconds', 180);
@@ -239,8 +239,6 @@ class PVRegelung extends IPSModule
             'boiler' => [
                 'temp_c' => (int)$this->ReadPropertyInteger('BoilerTempVarID'),
                 'hp_target_c' => (float)$this->ReadPropertyFloat('HpTargetC'),
-                'rod_target_c' => (float)$this->ReadPropertyFloat('RodTargetC'),
-                'rod_target_var' => (int)$this->ReadPropertyInteger('RodTargetVarID'),
                 'rod_min_start_temp_c' => (float)$this->ReadPropertyFloat('RodMinStartTempC'),
             ],
             'battery' => [
@@ -911,12 +909,7 @@ class PVRegelung extends IPSModule
 
     private function readBoilerRodTargetC(array $CFG): float
     {
-        $default = (float)($CFG['boiler']['rod_target_c'] ?? 60.0);
-        $varId = (int)($CFG['boiler']['rod_target_var'] ?? 0);
-        if ($varId > 0) {
-            return max(0.0, min(90.0, (float)$this->readVar($varId, $default)));
-        }
-
+        $default = 60.0;
         $root = $this->ensureCategoryByIdent($this->InstanceID, 'pv_ui_root', (string)($CFG['ui']['root_name'] ?? 'PV Regelung'));
         $cHeat = $this->ensureCategoryByIdent($root, 'pv_ui_heat', 'Heizung');
         return max(0.0, min(90.0, (float)$this->readVarByIdent($cHeat, 'pv_boiler_target_c', $default)));
@@ -993,15 +986,6 @@ class PVRegelung extends IPSModule
         $this->ensureVariableByIdent($cLoad, 'pv_load_kw', 'Gebäudelast', 2, 'PV_kW');
         $this->ensureVariableByIdent($cLoad, 'pv_house_load_kw', 'Hausverbrauch (ohne WB/WP/Heizstab/Batt)', 2, 'PV_kW');
         $this->ensureVariableByIdent($cLoad, 'pv_boiler_temp', 'Boiler Temperatur', 2, '~Temperature');
-        $this->ensureActionVariableByIdent($cLoad, 'pv_boiler_target_c', 'Boiler Solltemperatur', 2, '~Temperature');
-
-        $this->moveObjectByIdent($cLoad, $cHeat, 'pv_boiler_target_c');
-        $this->ensureActionVariableByIdent($cHeat, 'pv_boiler_target_c', 'Boiler Solltemperatur', 2, '~Temperature');
-
-        $this->moveObjectByIdent($cLoad, $cHeat, 'pv_boiler_target_c');
-        $this->ensureActionVariableByIdent($cHeat, 'pv_boiler_target_c', 'Boiler Solltemperatur', 2, '~Temperature');
-
-        $this->moveObjectByIdent($cLoad, $cHeat, 'pv_boiler_target_c');
         $this->ensureActionVariableByIdent($cHeat, 'pv_boiler_target_c', 'Boiler Solltemperatur', 2, '~Temperature');
 
         $this->ensureVariableByIdent($cWb, 'pv_wb_power_kw', 'Leistung Ist', 2, 'PV_kW');
