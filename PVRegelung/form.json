@@ -1,0 +1,554 @@
+{
+    "elements": [
+        {
+            "type": "Label",
+            "label": "PV REGELUNG — Überschuss + Vorrang (Wärmepumpe vor Akku)\nTimer-basiertes Modul (Port aus Script v1.8)."
+        },
+        {
+            "type": "ExpansionPanel",
+            "caption": "Allgemein",
+            "items": [
+                {
+                    "type": "NumberSpinner",
+                    "name": "LoopSeconds",
+                    "caption": "Loop (Sekunden)",
+                    "minimum": 5,
+                    "maximum": 300
+                },
+                {
+                    "type": "CheckBox",
+                    "name": "AutoRunOnStart",
+                    "caption": "Beim Aktivieren einmal sofort ausführen"
+                }
+            ]
+        },
+        {
+            "type": "ExpansionPanel",
+            "caption": "Leistungsmessung (Grid / PV)",
+            "items": [
+                {
+                    "type": "SelectVariable",
+                    "name": "GridMeterID",
+                    "caption": "Grid-Meter (kW: +Bezug / -Einspeisung)"
+                },
+                {
+                    "type": "Select",
+                    "name": "GridMeterUnit",
+                    "caption": "Einheit Grid-Meter",
+                    "options": [
+                        {
+                            "label": "kW",
+                            "value": "kW"
+                        },
+                        {
+                            "label": "W",
+                            "value": "W"
+                        }
+                    ]
+                },
+                {
+                    "type": "SelectVariable",
+                    "name": "PV1ID",
+                    "caption": "PV1 Leistung"
+                },
+                {
+                    "type": "Select",
+                    "name": "PV1Unit",
+                    "caption": "Einheit PV1",
+                    "options": [
+                        {
+                            "label": "kW",
+                            "value": "kW"
+                        },
+                        {
+                            "label": "W",
+                            "value": "W"
+                        }
+                    ]
+                },
+                {
+                    "type": "SelectVariable",
+                    "name": "PV2ID",
+                    "caption": "PV2 Leistung"
+                },
+                {
+                    "type": "Select",
+                    "name": "PV2Unit",
+                    "caption": "Einheit PV2",
+                    "options": [
+                        {
+                            "label": "W",
+                            "value": "W"
+                        },
+                        {
+                            "label": "kW",
+                            "value": "kW"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "ExpansionPanel",
+            "caption": "Boiler",
+            "items": [
+                {
+                    "type": "SelectVariable",
+                    "name": "BoilerTempVarID",
+                    "caption": "Boiler Temperatur (°C)"
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "HpTargetC",
+                    "caption": "WP Zieltemperatur (°C)",
+                    "digits": 1,
+                    "minimum": 0,
+                    "maximum": 90
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "RodTargetC",
+                    "caption": "Heizstab Zieltemperatur (°C)",
+                    "digits": 1,
+                    "minimum": 0,
+                    "maximum": 90
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "RodMinStartTempC",
+                    "caption": "Heizstab min. Starttemp (°C)",
+                    "digits": 1,
+                    "minimum": 0,
+                    "maximum": 90
+                }
+            ]
+        },
+        {
+            "type": "ExpansionPanel",
+            "caption": "Batterie",
+            "items": [
+                {
+                    "type": "SelectVariable",
+                    "name": "BatterySocVarID",
+                    "caption": "SOC (%)"
+                },
+                {
+                    "type": "SelectVariable",
+                    "name": "BatteryChargePowerVarID",
+                    "caption": "Batterie Ladeleistung (optional)"
+                },
+                {
+                    "type": "Select",
+                    "name": "BatteryChargePowerUnit",
+                    "caption": "Einheit Batterie Ladeleistung",
+                    "options": [
+                        {
+                            "label": "kW",
+                            "value": "kW"
+                        },
+                        {
+                            "label": "W",
+                            "value": "W"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "ExpansionPanel",
+            "caption": "Wärmepumpe (optional On/Off + Überschuss-Signal)",
+            "items": [
+                {
+                    "type": "CheckBox",
+                    "name": "HeatpumpEnabled",
+                    "caption": "Wärmepumpe-Logik aktiv"
+                },
+                {
+                    "type": "SelectVariable",
+                    "name": "HeatpumpForceRunVarID",
+                    "caption": "WP Force-Run Bool (0 = keine On/Off-Steuerung)"
+                },
+                {
+                    "type": "SelectVariable",
+                    "name": "HeatpumpRunningVarID",
+                    "caption": "WP Running (Ist)"
+                },
+                {
+                    "type": "SelectVariable",
+                    "name": "HeatpumpPowerInVarID",
+                    "caption": "WP Leistung (Ist)"
+                },
+                {
+                    "type": "Select",
+                    "name": "HeatpumpPowerInUnit",
+                    "caption": "Einheit WP Leistung",
+                    "options": [
+                        {
+                            "label": "kW",
+                            "value": "kW"
+                        },
+                        {
+                            "label": "W",
+                            "value": "W"
+                        }
+                    ]
+                },
+                {
+                    "type": "SelectVariable",
+                    "name": "HeatpumpSurplusOutVarID",
+                    "caption": "WP Überschuss-Output (Float)"
+                },
+                {
+                    "type": "Select",
+                    "name": "HeatpumpSurplusOutUnit",
+                    "caption": "Einheit Überschuss-Output",
+                    "options": [
+                        {
+                            "label": "kW",
+                            "value": "kW"
+                        },
+                        {
+                            "label": "W",
+                            "value": "W"
+                        }
+                    ]
+                },
+                {
+                    "type": "CheckBox",
+                    "name": "HeatpumpSurplusOutSigned",
+                    "caption": "Überschuss-Output mit Vorzeichen (GridW)"
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "HeatpumpTempHysteresisC",
+                    "caption": "Temp-Hysterese (°C)",
+                    "digits": 2,
+                    "minimum": 0,
+                    "maximum": 10
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "HeatpumpMinSurplusW",
+                    "caption": "Min. Überschuss zum Start (W)",
+                    "minimum": 0,
+                    "maximum": 20000
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "HeatpumpMinOnSeconds",
+                    "caption": "Min. Laufzeit EIN (s)",
+                    "minimum": 0,
+                    "maximum": 3600
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "HeatpumpMinOffSeconds",
+                    "caption": "Min. Pause AUS (s)",
+                    "minimum": 0,
+                    "maximum": 3600
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "HeatpumpAssumedPowerW",
+                    "caption": "Annahme Leistung wenn Ist fehlt (W)",
+                    "minimum": 0,
+                    "maximum": 20000
+                }
+            ]
+        },
+        {
+            "type": "ExpansionPanel",
+            "caption": "Heizstab (weekly)",
+            "items": [
+                {
+                    "type": "CheckBox",
+                    "name": "HeatingRodEnabled",
+                    "caption": "Heizstab-Logik aktiv"
+                },
+                {
+                    "type": "SelectVariable",
+                    "name": "HeatingRodPowerPercentVarID",
+                    "caption": "Heizstab Leistung % (0 = deaktiviert)"
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "HeatingRodMaxPowerW",
+                    "caption": "Max Leistung (W)",
+                    "minimum": 0,
+                    "maximum": 10000
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "HeatingRodMinSurplusW",
+                    "caption": "Min Überschuss (W)",
+                    "minimum": 0,
+                    "maximum": 10000
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "HeatingRodMinPercent",
+                    "caption": "Min % wenn aktiv",
+                    "minimum": 0,
+                    "maximum": 100
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "HeatingRodMinOnSeconds",
+                    "caption": "Min EIN (s)",
+                    "minimum": 0,
+                    "maximum": 3600
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "HeatingRodMinOffSeconds",
+                    "caption": "Min AUS (s)",
+                    "minimum": 0,
+                    "maximum": 3600
+                },
+                {
+                    "type": "CheckBox",
+                    "name": "HeatingRodWeeklyEnabled",
+                    "caption": "Weekly-Fenster aktiv"
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "HeatingRodWeeklyWeekday",
+                    "caption": "Wochentag (1=Mo ... 7=So)",
+                    "minimum": 1,
+                    "maximum": 7
+                },
+                {
+                    "type": "ValidationTextBox",
+                    "name": "HeatingRodWeeklyStart",
+                    "caption": "Start (HH:MM)",
+                    "validate": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+                },
+                {
+                    "type": "ValidationTextBox",
+                    "name": "HeatingRodWeeklyEnd",
+                    "caption": "Ende (HH:MM)",
+                    "validate": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+                }
+            ]
+        },
+        {
+            "type": "ExpansionPanel",
+            "caption": "Wallbox",
+            "items": [
+                {
+                    "type": "CheckBox",
+                    "name": "WallboxEnabled",
+                    "caption": "Wallbox-Logik aktiv"
+                },
+                {
+                    "type": "SelectVariable",
+                    "name": "WallboxEnableVarID",
+                    "caption": "Freigabe Bool"
+                },
+                {
+                    "type": "SelectVariable",
+                    "name": "WallboxChargePowerVarID",
+                    "caption": "Leistung Ist"
+                },
+                {
+                    "type": "Select",
+                    "name": "WallboxChargePowerUnit",
+                    "caption": "Einheit Leistung Ist",
+                    "options": [
+                        {
+                            "label": "kW",
+                            "value": "kW"
+                        },
+                        {
+                            "label": "W",
+                            "value": "W"
+                        }
+                    ]
+                },
+                {
+                    "type": "SelectVariable",
+                    "name": "WallboxSetCurrentAVarID",
+                    "caption": "Sollstrom (A)"
+                },
+                {
+                    "type": "SelectVariable",
+                    "name": "WallboxPhase1pVarID",
+                    "caption": "Phasen Bool (true=1P / false=3P)"
+                },
+                {
+                    "type": "CheckBox",
+                    "name": "WallboxPhaseTrueIs1p",
+                    "caption": "Bool true bedeutet 1-phasig"
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "WallboxPhaseMinHoldSeconds",
+                    "caption": "Min Haltezeit Phase (s)",
+                    "minimum": 0,
+                    "maximum": 3600
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "WallboxPhaseSwitchTo3pMinW",
+                    "caption": "Umschalten auf 3P ab (W)",
+                    "minimum": 0,
+                    "maximum": 20000
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "WallboxPhaseSwitchTo1pMaxW",
+                    "caption": "Umschalten auf 1P bis (W)",
+                    "minimum": 0,
+                    "maximum": 20000
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "WallboxVoltageV",
+                    "caption": "Spannung (V)",
+                    "minimum": 100,
+                    "maximum": 260
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "WallboxMinA",
+                    "caption": "Min A",
+                    "minimum": 0,
+                    "maximum": 64
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "WallboxMaxA",
+                    "caption": "Max A",
+                    "minimum": 0,
+                    "maximum": 64
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "WallboxStepA",
+                    "caption": "Step A",
+                    "minimum": 1,
+                    "maximum": 10
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "WallboxMinOnSeconds",
+                    "caption": "Min EIN (s)",
+                    "minimum": 0,
+                    "maximum": 3600
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "WallboxMinOffSeconds",
+                    "caption": "Min AUS (s)",
+                    "minimum": 0,
+                    "maximum": 3600
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "WallboxReserveW",
+                    "caption": "Reserve (W)",
+                    "minimum": 0,
+                    "maximum": 5000
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "WallboxRampUpA",
+                    "caption": "Rampen +A pro Loop",
+                    "minimum": 1,
+                    "maximum": 10
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "WallboxRampDownA",
+                    "caption": "Rampen -A pro Loop",
+                    "minimum": 1,
+                    "maximum": 10
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "WallboxSoftOffGraceSeconds",
+                    "caption": "Soft-Off Grace (s)",
+                    "minimum": 0,
+                    "maximum": 3600
+                }
+            ]
+        },
+        {
+            "type": "ExpansionPanel",
+            "caption": "Surplus-Parameter / Filter",
+            "items": [
+                {
+                    "type": "NumberSpinner",
+                    "name": "SurplusExportDeadbandW",
+                    "caption": "Export Deadband (W)",
+                    "minimum": 0,
+                    "maximum": 2000
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "SurplusMaxGridImportW",
+                    "caption": "Max Grid Import (W)",
+                    "minimum": 0,
+                    "maximum": 5000
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "SurplusFilterAlpha",
+                    "caption": "Filter Alpha (0..1)",
+                    "digits": 2,
+                    "minimum": 0,
+                    "maximum": 1
+                }
+            ]
+        },
+        {
+            "type": "ExpansionPanel",
+            "caption": "Outputs",
+            "items": [
+                {
+                    "type": "SelectVariable",
+                    "name": "OutputsGridFilteredInvertedVarID",
+                    "caption": "Netz (gefiltert) invertiert Output"
+                },
+                {
+                    "type": "Select",
+                    "name": "OutputsGridFilteredInvertedUnit",
+                    "caption": "Einheit Output",
+                    "options": [
+                        {
+                            "label": "kW",
+                            "value": "kW"
+                        },
+                        {
+                            "label": "W",
+                            "value": "W"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "ExpansionPanel",
+            "caption": "UI",
+            "items": [
+                {
+                    "type": "ValidationTextBox",
+                    "name": "UIRootName",
+                    "caption": "Root-Kategorie Name"
+                }
+            ]
+        }
+    ],
+    "actions": [
+        {
+            "type": "Button",
+            "label": "Jetzt ausführen",
+            "onClick": "PVREG_RunNow($id);"
+        },
+        {
+            "type": "Button",
+            "label": "State zurücksetzen",
+            "onClick": "PVREG_ResetState($id);"
+        }
+    ]
+}

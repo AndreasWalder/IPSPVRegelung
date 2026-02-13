@@ -1,0 +1,13 @@
+{
+    "id": "{F234BA65-17B7-43BD-99AD-B055BB59A77F}",
+    "name": "PV Regelung",
+    "type": 3,
+    "vendor": "Andreas Walder",
+    "aliases": [
+        "PV Regelung"
+    ],
+    "parentRequirements": [],
+    "childRequirements": [],
+    "implemented": [],
+    "prefix": "PVREG"
+}
