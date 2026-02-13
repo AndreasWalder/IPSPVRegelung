@@ -44,6 +44,7 @@ declare(strict_types=1);
  *                  damit keine "Skript existiert nicht"-Warnungen auftreten.
  * 2026-02-13: v1.21 — Härtung Action-Skript: Script-ID wird auf Existenz/Typ geprüft und bei Bedarf
  *                  neu erstellt, damit kein ungültiger CustomAction-Verweis gesetzt wird.
+ * 2026-02-13: v1.22 — Manuelle Wallbox-Ladeleistung in kW (2.0–11.0) statt W; inkl. Migration alter W-Werte.
  */
 
 class PVRegelung extends IPSModule
@@ -184,7 +185,7 @@ class PVRegelung extends IPSModule
                 $this->runLoop();
                 break;
             case 'pv_manual_wb_power_w':
-                $this->setManualVarByIdent('pv_manual_wb_power_w', max(0, (int)$Value));
+                $this->setManualVarByIdent('pv_manual_wb_power_w', $this->normalizeManualPowerToKw((float)$Value));
                 $this->runLoop();
                 break;
             case 'pv_manual_wb_target_soc':
@@ -297,7 +298,7 @@ class PVRegelung extends IPSModule
                 'manual' => [
                     'car_soc_var' => (int)$this->ReadPropertyInteger('WallboxManualCarSocVarID'),
                     'default_target_soc' => (float)$this->ReadPropertyFloat('WallboxManualDefaultTargetSoc'),
-                    'default_power_w' => (int)$this->ReadPropertyInteger('WallboxManualDefaultPowerW'),
+                    'default_power_w' => (int)round($this->normalizeManualPowerToKw((float)$this->ReadPropertyInteger('WallboxManualDefaultPowerW')) * 1000.0),
                 ],
             ],
             'ui' => [
@@ -787,7 +788,8 @@ class PVRegelung extends IPSModule
         $cWb = $this->ensureCategoryByIdent($root, 'pv_ui_wb', 'Wallbox');
 
         $active = (bool)$this->readVarByIdent($cWb, 'pv_manual_wb_enable', false);
-        $powerW = (int)$this->readVarByIdent($cWb, 'pv_manual_wb_power_w', (int)($CFG['wallbox']['manual']['default_power_w'] ?? 4200));
+        $defaultPowerKw = $this->normalizeManualPowerToKw(((float)($CFG['wallbox']['manual']['default_power_w'] ?? 4200.0)) / 1000.0);
+        $powerKw = $this->normalizeManualPowerToKw((float)$this->readVarByIdent($cWb, 'pv_manual_wb_power_w', $defaultPowerKw));
         $targetSoc = (float)$this->readVarByIdent($cWb, 'pv_manual_wb_target_soc', (float)($CFG['wallbox']['manual']['default_target_soc'] ?? 80.0));
 
         $carSocVar = (int)($CFG['wallbox']['manual']['car_soc_var'] ?? 0);
@@ -795,7 +797,7 @@ class PVRegelung extends IPSModule
 
         return [
             $active,
-            max(0, $powerW),
+            (int)round($powerKw * 1000.0),
             max(0.0, min(100.0, $targetSoc)),
             max(0.0, min(100.0, $carSoc)),
         ];
@@ -938,6 +940,7 @@ class PVRegelung extends IPSModule
     {
         $this->ensureProfileFloat('PV_W', ' W', 0, 0.0, 0.0, 1.0);
         $this->ensureProfileFloat('PV_kW', ' kW', 2, 0.0, 0.0, 0.01);
+        $this->ensureProfileFloat('PV_kWI', ' kW', 1, 2.0, 11.0, 0.1);
         $this->ensureProfileFloat('PV_PCT', ' %', 0, 0.0, 100.0, 1.0);
         $this->ensureProfileInt('PV_A', ' A', 0, 0, 0, 1);
         $this->ensureProfileInt('PV_WI', ' W', 0, 0, 22000, 100);
@@ -969,7 +972,8 @@ class PVRegelung extends IPSModule
         $this->ensureActionVariableByIdent($cWb, 'pv_wb_enabled', 'Freigabe', 0, '~Switch');
         $this->ensureVariableByIdent($cWb, 'pv_wb_target_a', 'Sollstrom', 1, 'PV_A');
         $this->ensureActionVariableByIdent($cWb, 'pv_manual_wb_enable', 'Manuell laden aktiv', 0, '~Switch');
-        $this->ensureActionVariableByIdent($cWb, 'pv_manual_wb_power_w', 'Manuelle Ladeleistung', 1, 'PV_WI');
+        $this->migrateManualPowerVarToKw($cWb);
+        $this->ensureActionVariableByIdent($cWb, 'pv_manual_wb_power_w', 'Manuelle Ladeleistung', 2, 'PV_kWI');
         $this->ensureActionVariableByIdent($cWb, 'pv_manual_wb_target_soc', 'Manuelles Ziel-SOC', 2, 'PV_PCT');
         $this->ensureVariableByIdent($cWb, 'pv_manual_wb_car_soc', 'Auto SOC (Ist)', 2, 'PV_PCT');
 
@@ -1013,7 +1017,7 @@ class PVRegelung extends IPSModule
         if (isset($v['wallboxChargeW'])) $this->setVarByIdent($cWb, 'pv_wb_power_kw', $this->wToKw((float)$v['wallboxChargeW']));
         if (isset($v['wbA'])) $this->setVarByIdent($cWb, 'pv_wb_target_a', (int)$v['wbA']);
         if (isset($v['manualActive'])) $this->setVarByIdent($cWb, 'pv_manual_wb_enable', ((int)$v['manualActive']) === 1);
-        if (isset($v['manualPowerW'])) $this->setVarByIdent($cWb, 'pv_manual_wb_power_w', (int)$v['manualPowerW']);
+        if (isset($v['manualPowerW'])) $this->setVarByIdent($cWb, 'pv_manual_wb_power_w', round(((float)$v['manualPowerW']) / 1000.0, 1));
         if (isset($v['manualTargetSoc'])) $this->setVarByIdent($cWb, 'pv_manual_wb_target_soc', (float)$v['manualTargetSoc']);
         if (isset($v['manualCarSoc'])) $this->setVarByIdent($cWb, 'pv_manual_wb_car_soc', (float)$v['manualCarSoc']);
 
@@ -1231,6 +1235,14 @@ class PVRegelung extends IPSModule
         return (int)$script;
     }
 
+    private function normalizeManualPowerToKw(float $power): float
+    {
+        if ($power > 50.0) {
+            $power /= 1000.0;
+        }
+        return max(2.0, min(11.0, $power));
+    }
+
     private function ensureManualWallboxDefaults(array $CFG): void
     {
         $root = $this->ensureCategoryByIdent($this->InstanceID, 'pv_ui_root', (string)($CFG['ui']['root_name'] ?? 'PV Regelung'));
@@ -1245,14 +1257,39 @@ class PVRegelung extends IPSModule
         }
 
         $powerId = @IPS_GetObjectIDByIdent('pv_manual_wb_power_w', $cWb);
-        if ($powerId !== false && (int)GetValue((int)$powerId) <= 0) {
-            SetValue((int)$powerId, (int)($CFG['wallbox']['manual']['default_power_w'] ?? 4200));
+        $defaultPowerKw = $this->normalizeManualPowerToKw(((float)($CFG['wallbox']['manual']['default_power_w'] ?? 4200.0)) / 1000.0);
+        if ($powerId !== false && (float)GetValue((int)$powerId) <= 0.0) {
+            SetValue((int)$powerId, $defaultPowerKw);
         }
 
         $targetId = @IPS_GetObjectIDByIdent('pv_manual_wb_target_soc', $cWb);
         if ($targetId !== false && (float)GetValue((int)$targetId) <= 0.0) {
             SetValue((int)$targetId, (float)($CFG['wallbox']['manual']['default_target_soc'] ?? 80.0));
         }
+    }
+
+    private function migrateManualPowerVarToKw(int $parentId): void
+    {
+        $id = @IPS_GetObjectIDByIdent('pv_manual_wb_power_w', $parentId);
+        if ($id === false) {
+            return;
+        }
+
+        $var = IPS_GetVariable((int)$id);
+        if ((int)($var['VariableType'] ?? -1) === 2) {
+            return;
+        }
+
+        $oldValue = (float)GetValue((int)$id);
+        $kwValue = $this->normalizeManualPowerToKw($oldValue);
+
+        IPS_DeleteVariable((int)$id);
+        $newId = IPS_CreateVariable(2);
+        IPS_SetParent($newId, $parentId);
+        IPS_SetIdent($newId, 'pv_manual_wb_power_w');
+        IPS_SetName($newId, 'Manuelle Ladeleistung');
+        IPS_SetVariableCustomProfile($newId, 'PV_kWI');
+        SetValue($newId, $kwValue);
     }
 
     private function setManualVarByIdent(string $ident, $value): void
