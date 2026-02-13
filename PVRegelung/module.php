@@ -40,6 +40,8 @@ declare(strict_types=1);
  *                  Bei Freigabe EIN wird Sperrzeit zurückgesetzt und Regelung sofort neu ausgewertet.
  * 2026-02-13: v1.19 — UI-Fix manuelle Wallbox-Werte: Action direkt auf Instanz gelegt (RequestAction),
  *                  Profil "PV_WI" mit sinnvollem Wertebereich für editierbare Eingabe in der Visu.
+ * 2026-02-13: v1.20 — Fix Action-Binding: CustomAction wieder auf erzeugtes Action-Skript gesetzt,
+ *                  damit keine "Skript existiert nicht"-Warnungen auftreten.
  */
 
 class PVRegelung extends IPSModule
@@ -1181,6 +1183,40 @@ class PVRegelung extends IPSModule
         $id = $this->ensureVariableByIdent($parentId, $ident, $name, $type, $profile);
         IPS_SetVariableCustomAction($id, $this->InstanceID);
         return $id;
+    }
+
+    private function ensureActionScriptId(): int
+    {
+        $script = @IPS_GetObjectIDByIdent('pv_action_script', $this->InstanceID);
+        if ($script === false) {
+            $script = IPS_CreateScript(0);
+            IPS_SetParent($script, $this->InstanceID);
+            IPS_SetIdent($script, 'pv_action_script');
+            IPS_SetName($script, 'PVRegelung Action');
+            IPS_SetHidden($script, true);
+        }
+
+        $content = "<?php
+"
+            . "\$variableId = (int)\$_IPS['VARIABLE'];
+"
+            . "\$value = \$_IPS['VALUE'];
+"
+            . "\$object = IPS_GetObject(\$variableId);
+"
+            . "\$ident = (string)(\$object['ObjectIdent'] ?? '');
+"
+            . "if (\$ident === '') {
+"
+            . "    return;
+"
+            . "}
+"
+            . 'IPS_RequestAction(' . $this->InstanceID . ", \$ident, \$value);
+";
+
+        IPS_SetScriptContent((int)$script, $content);
+        return (int)$script;
     }
 
     private function ensureManualWallboxDefaults(array $CFG): void
