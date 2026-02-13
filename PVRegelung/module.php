@@ -989,6 +989,10 @@ class PVRegelung extends IPSModule
         $this->ensureVariableByIdent($cLoad, 'pv_load_kw', 'Gebäudelast', 2, 'PV_kW');
         $this->ensureVariableByIdent($cLoad, 'pv_house_load_kw', 'Hausverbrauch (ohne WB/WP/Heizstab/Batt)', 2, 'PV_kW');
         $this->ensureVariableByIdent($cLoad, 'pv_boiler_temp', 'Boiler Temperatur', 2, '~Temperature');
+        $this->ensureActionVariableByIdent($cLoad, 'pv_boiler_target_c', 'Boiler Solltemperatur', 2, '~Temperature');
+
+        $this->moveObjectByIdent($cLoad, $cHeat, 'pv_boiler_target_c');
+        $this->ensureActionVariableByIdent($cHeat, 'pv_boiler_target_c', 'Boiler Solltemperatur', 2, '~Temperature');
 
         $this->moveObjectByIdent($cLoad, $cHeat, 'pv_boiler_target_c');
         $this->ensureActionVariableByIdent($cHeat, 'pv_boiler_target_c', 'Boiler Solltemperatur', 2, '~Temperature');
