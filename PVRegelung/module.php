@@ -38,6 +38,10 @@ declare(strict_types=1);
  *                  Manuelle Ladeleistung und Ziel-SOC als interaktive IPS-Variablen (Action auf Instanz).
  * 2026-02-13: v1.18 — Action-Skript für klickbare UI-Variablen erstellt/zugewiesen (IP-Symcon-konform).
  *                  Bei Freigabe EIN wird Sperrzeit zurückgesetzt und Regelung sofort neu ausgewertet.
+ * 2026-02-13: v1.19 — UI-Fix manuelle Wallbox-Werte: Action direkt auf Instanz gelegt (RequestAction),
+ *                  Profil "PV_WI" mit sinnvollem Wertebereich für editierbare Eingabe in der Visu.
+ * 2026-02-13: v1.20 — Fix Action-Binding: CustomAction wieder auf erzeugtes Action-Skript gesetzt,
+ *                  damit keine "Skript existiert nicht"-Warnungen auftreten.
  */
 
 class PVRegelung extends IPSModule
@@ -934,7 +938,7 @@ class PVRegelung extends IPSModule
         $this->ensureProfileFloat('PV_kW', ' kW', 2, 0.0, 0.0, 0.01);
         $this->ensureProfileFloat('PV_PCT', ' %', 0, 0.0, 100.0, 1.0);
         $this->ensureProfileInt('PV_A', ' A', 0, 0, 0, 1);
-        $this->ensureProfileInt('PV_WI', ' W', 0, 0, 0, 1);
+        $this->ensureProfileInt('PV_WI', ' W', 0, 0, 22000, 100);
 
         $root = $this->ensureCategoryByIdent($this->InstanceID, 'pv_ui_root', (string)($CFG['ui']['root_name'] ?? 'PV Regelung'));
 
@@ -1192,15 +1196,24 @@ class PVRegelung extends IPSModule
             IPS_SetHidden($script, true);
         }
 
-        $content = "<?php\n"
-            . "\$variableId = (int)\$_IPS['VARIABLE'];\n"
-            . "\$value = \$_IPS['VALUE'];\n"
-            . "\$object = IPS_GetObject(\$variableId);\n"
-            . "\$ident = (string)(\$object['ObjectIdent'] ?? '');\n"
-            . "if (\$ident === '') {\n"
-            . "    return;\n"
-            . "}\n"
-            . 'IPS_RequestAction(' . $this->InstanceID . ", \$ident, \$value);\n";
+        $content = "<?php
+"
+            . "\$variableId = (int)\$_IPS['VARIABLE'];
+"
+            . "\$value = \$_IPS['VALUE'];
+"
+            . "\$object = IPS_GetObject(\$variableId);
+"
+            . "\$ident = (string)(\$object['ObjectIdent'] ?? '');
+"
+            . "if (\$ident === '') {
+"
+            . "    return;
+"
+            . "}
+"
+            . 'IPS_RequestAction(' . $this->InstanceID . ", \$ident, \$value);
+";
 
         IPS_SetScriptContent((int)$script, $content);
         return (int)$script;
