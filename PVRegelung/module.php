@@ -46,6 +46,7 @@ declare(strict_types=1);
  *                  neu erstellt, damit kein ungültiger CustomAction-Verweis gesetzt wird.
  * 2026-02-13: v1.22 — Manuelle Wallbox-Ladeleistung in kW (2.0–11.0) statt W; inkl. Migration alter W-Werte.
  * 2026-02-13: v1.23 — Manuelle Ladeleistung ohne Nachkommastelle (2–11 kW) und sofortiges AUS bei Deaktivierung von "Manuell laden aktiv".
+ * 2026-02-13: v1.24 — UI-Bereinigung: separate Wallbox-Freigabe-Variable entfernt; Wallbox-Regelung läuft wieder ohne zusätzlichen UI-Schalter.
  */
 
 class PVRegelung extends IPSModule
@@ -169,16 +170,6 @@ class PVRegelung extends IPSModule
     {
         switch ((string)$Ident) {
             case 'Loop':
-                $this->runLoop();
-                break;
-            case 'pv_wb_enabled':
-                $enabled = (bool)$Value;
-                $this->setManualVarByIdent('pv_wb_enabled', $enabled);
-                if (!$enabled) {
-                    $this->setManualVarByIdent('pv_manual_wb_enable', false);
-                } else {
-                    $this->resetWallboxReleaseBlockers();
-                }
                 $this->runLoop();
                 break;
             case 'pv_manual_wb_enable':
@@ -380,22 +371,7 @@ class PVRegelung extends IPSModule
         ]);
 
         $maxImport = (float)$CFG['surplus']['max_grid_import_w'];
-        $surplusReleaseEnabled = $this->readWallboxReleaseEnabled($CFG);
         [$manualActive, $manualPowerW, $manualTargetSoc, $carSoc] = $this->readManualWallboxConfig($CFG);
-
-        if (!$surplusReleaseEnabled) {
-            $manualActive = false;
-            $this->setManualVarByIdent('pv_manual_wb_enable', false);
-            $this->applyWallbox($CFG, $state, false, 0);
-            $this->updateUiVars($CFG, [
-                'wbOn' => 0,
-                'wbA' => 0,
-                'manualActive' => 0,
-                'restSurplusW' => 0.0,
-            ]);
-            $this->saveState($state);
-            return;
-        }
 
         if ($manualActive) {
             $manualDone = $carSoc >= $manualTargetSoc;
@@ -980,7 +956,7 @@ class PVRegelung extends IPSModule
         $this->ensureVariableByIdent($cLoad, 'pv_boiler_temp', 'Boiler Temperatur', 2, '~Temperature');
 
         $this->ensureVariableByIdent($cWb, 'pv_wb_power_kw', 'Leistung Ist', 2, 'PV_kW');
-        $this->ensureActionVariableByIdent($cWb, 'pv_wb_enabled', 'Freigabe', 0, '~Switch');
+        $this->removeVariableByIdent($cWb, 'pv_wb_enabled');
         $this->ensureVariableByIdent($cWb, 'pv_wb_target_a', 'Sollstrom', 1, 'PV_A');
         $this->ensureActionVariableByIdent($cWb, 'pv_manual_wb_enable', 'Manuell laden aktiv', 0, '~Switch');
         $this->migrateManualPowerVarToKw($cWb);
@@ -1133,18 +1109,6 @@ class PVRegelung extends IPSModule
     {
         $this->SetBuffer('PV_STATE_JSON', json_encode($state, JSON_UNESCAPED_UNICODE));
     }
-
-
-    private function resetWallboxReleaseBlockers(): void
-    {
-        $state = $this->loadState();
-        $state['wb_last_off_ts'] = 0;
-        $state['wb_deficit_since_ts'] = 0;
-        $state['wb_soft_on'] = false;
-        $state['wb_soft_a'] = 0;
-        $this->saveState($state);
-    }
-
     private function readVar(int $varId, $default)
     {
         if ($varId <= 0) return $default;
@@ -1259,14 +1223,6 @@ class PVRegelung extends IPSModule
         $root = $this->ensureCategoryByIdent($this->InstanceID, 'pv_ui_root', (string)($CFG['ui']['root_name'] ?? 'PV Regelung'));
         $cWb = $this->ensureCategoryByIdent($root, 'pv_ui_wb', 'Wallbox');
 
-        if ($this->GetBuffer('PV_WB_RELEASE_INIT') !== '1') {
-            $releaseId = @IPS_GetObjectIDByIdent('pv_wb_enabled', $cWb);
-            if ($releaseId !== false) {
-                SetValue((int)$releaseId, true);
-            }
-            $this->SetBuffer('PV_WB_RELEASE_INIT', '1');
-        }
-
         $powerId = @IPS_GetObjectIDByIdent('pv_manual_wb_power_w', $cWb);
         $defaultPowerKw = $this->normalizeManualPowerToKw(((float)($CFG['wallbox']['manual']['default_power_w'] ?? 4200.0)) / 1000.0);
         if ($powerId !== false && (float)GetValue((int)$powerId) <= 0.0) {
@@ -1310,13 +1266,6 @@ class PVRegelung extends IPSModule
         $this->setVarByIdent($cWb, $ident, $value);
     }
 
-    private function readWallboxReleaseEnabled(array $CFG): bool
-    {
-        $root = $this->ensureCategoryByIdent($this->InstanceID, 'pv_ui_root', (string)($CFG['ui']['root_name'] ?? 'PV Regelung'));
-        $cWb = $this->ensureCategoryByIdent($root, 'pv_ui_wb', 'Wallbox');
-        return (bool)$this->readVarByIdent($cWb, 'pv_wb_enabled', true);
-    }
-
     private function readVarByIdent(int $parentId, string $ident, $default)
     {
         $id = @IPS_GetObjectIDByIdent($ident, $parentId);
@@ -1329,6 +1278,14 @@ class PVRegelung extends IPSModule
         $id = @IPS_GetObjectIDByIdent($ident, $parentId);
         if ($id === false) return;
         SetValue($id, $value);
+    }
+
+    private function removeVariableByIdent(int $parentId, string $ident): void
+    {
+        $id = @IPS_GetObjectIDByIdent($ident, $parentId);
+        if ($id === false) return;
+        if (!@IPS_VariableExists((int)$id)) return;
+        IPS_DeleteVariable((int)$id);
     }
 
     private function ensureProfileFloat(string $name, string $suffix, int $digits, float $min, float $max, float $step): void
