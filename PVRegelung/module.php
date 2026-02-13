@@ -30,6 +30,9 @@ declare(strict_types=1);
  * 2026-02-13: v1.11 — Hausverbrauch: Batterie-Leistung als signed Wert behandelt
  *                  (Entladung wird addiert, Ladung wird abgezogen)
  * 2026-02-13: v1.12 — Loop-Intervall Standard auf 15s gesetzt; Mindestgrenze auf 5s.
+ * 2026-02-13: v1.13 — Hausverbrauch: WP-Leistung nur abziehen, wenn WP laut Laufstatus wirklich aktiv ist.
+ * 2026-02-13: v1.14 — Hausverbrauch: Batterie nur bei Entladung addieren; Ladung nicht mehr abziehen.
+ * 2026-02-13: v1.15 — Hausverbrauch: Batterie-Entladung aus positiven Leistungswerten berücksichtigen.
  */
 
 class PVRegelung extends IPSModule
@@ -302,7 +305,9 @@ class PVRegelung extends IPSModule
             $battPowerW = $this->readPowerToW($CFG['battery']['charge_power']);
         }
 
-        $houseLoadW = max(0.0, $buildingLoadW - $wallboxChargeW - $hpPowerW - $rodPowerW - $battPowerW);
+        $hpPowerForHouseW = $hpRunning ? $hpPowerW : 0.0;
+        $battDischargeForHouseW = ($battPowerW > 0.0) ? $battPowerW : 0.0;
+        $houseLoadW = max(0.0, $buildingLoadW - $wallboxChargeW - $hpPowerForHouseW - $rodPowerW + $battDischargeForHouseW);
 
         $this->updateUiVars($CFG, [
             'pv1W' => $pv1W,
