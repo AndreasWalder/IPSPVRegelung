@@ -25,6 +25,7 @@ declare(strict_types=1);
  * 2026-02-13: v1.6 — Wallbox Phasen-Umschaltung 1P/3P per Bool-Var (true=1P, false=3P) mit Hysterese + Mindesthaltezeit
  * 2026-02-13: v1.7 — Zusatz-Output: Netz (gefiltert) invertiert (Vorzeichen umdrehen)
  * 2026-02-13: v1.8 — export_deadband_w wirkt nur noch auf WP/Heizstab (Wallbox inkl. Phase läuft immer, außer bei Import-Limit)
+ * 2026-02-13: v1.9 — UI: zusätzliche selbst erstellte Variable „Netz (gefiltert, invertiert)“ ergänzt
  */
 
 class PVRegelung extends IPSModule
@@ -787,6 +788,7 @@ class PVRegelung extends IPSModule
 
         $this->ensureVariableByIdent($cSurp, 'pv_grid_kw_raw', 'Netz (raw)', 2, 'PV_kW');
         $this->ensureVariableByIdent($cSurp, 'pv_grid_kw_filt', 'Netz (gefiltert)', 2, 'PV_kW');
+        $this->ensureVariableByIdent($cSurp, 'pv_grid_kw_filt_inv', 'Netz (gefiltert, invertiert)', 2, 'PV_kW');
         $this->ensureVariableByIdent($cSurp, 'pv_import_kw', 'Bezug', 2, 'PV_kW');
         $this->ensureVariableByIdent($cSurp, 'pv_export_kw', 'Einspeisung', 2, 'PV_kW');
         $this->ensureVariableByIdent($cSurp, 'pv_rest_kw', 'Rest-Überschuss (Soll ~0)', 2, 'PV_kW');
@@ -827,6 +829,7 @@ class PVRegelung extends IPSModule
 
         if (isset($v['gridW_raw'])) $this->setVarByIdent($cSurp, 'pv_grid_kw_raw', $this->wToKw((float)$v['gridW_raw']));
         if (isset($v['gridW']))     $this->setVarByIdent($cSurp, 'pv_grid_kw_filt', $this->wToKw((float)$v['gridW']));
+        if (isset($v['gridW']))     $this->setVarByIdent($cSurp, 'pv_grid_kw_filt_inv', $this->wToKw(-(float)$v['gridW']));
         if (isset($v['importW']))   $this->setVarByIdent($cSurp, 'pv_import_kw', $this->wToKw((float)$v['importW']));
         if (isset($v['exportW']))   $this->setVarByIdent($cSurp, 'pv_export_kw', $this->wToKw((float)$v['exportW']));
         if (isset($v['restSurplusW'])) $this->setVarByIdent($cSurp, 'pv_rest_kw', $this->wToKw((float)$v['restSurplusW']));
