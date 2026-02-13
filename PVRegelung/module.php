@@ -1181,7 +1181,7 @@ class PVRegelung extends IPSModule
     private function ensureActionVariableByIdent(int $parentId, string $ident, string $name, int $type, string $profile): int
     {
         $id = $this->ensureVariableByIdent($parentId, $ident, $name, $type, $profile);
-        IPS_SetVariableCustomAction($id, $this->ensureActionScriptId());
+        IPS_SetVariableCustomAction($id, $this->InstanceID);
         return $id;
     }
 
