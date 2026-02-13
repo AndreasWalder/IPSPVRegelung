@@ -33,6 +33,7 @@ declare(strict_types=1);
  * 2026-02-13: v1.13 — Hausverbrauch: WP-Leistung nur abziehen, wenn WP laut Laufstatus wirklich aktiv ist.
  * 2026-02-13: v1.14 — Hausverbrauch: Batterie nur bei Entladung addieren; Ladung nicht mehr abziehen.
  * 2026-02-13: v1.15 — Hausverbrauch: Batterie-Entladung aus positiven Leistungswerten berücksichtigen.
+ * 2026-02-13: v1.16 — Wallbox: manueller Lademodus (Bool + Ladeleistung + Ziel-SOC) bis Auto-SOC erreicht ist, unabhängig von PV-Überschuss.
  */
 
 class PVRegelung extends IPSModule
@@ -126,6 +127,9 @@ class PVRegelung extends IPSModule
         $this->RegisterPropertyInteger('WallboxRampUpA', 1);
         $this->RegisterPropertyInteger('WallboxRampDownA', 1);
         $this->RegisterPropertyInteger('WallboxSoftOffGraceSeconds', 120);
+        $this->RegisterPropertyInteger('WallboxManualCarSocVarID', 0);
+        $this->RegisterPropertyFloat('WallboxManualDefaultTargetSoc', 80.0);
+        $this->RegisterPropertyInteger('WallboxManualDefaultPowerW', 4200);
 
         $this->RegisterPropertyString('UIRootName', 'PV Regelung');
 
@@ -142,6 +146,7 @@ class PVRegelung extends IPSModule
 
         $CFG = $this->buildCfg();
         $this->ensureUiStructure($CFG);
+        $this->ensureManualWallboxDefaults($CFG);
 
         if ($this->ReadPropertyBoolean('AutoRunOnStart')) {
             $this->RunNow();
@@ -153,6 +158,15 @@ class PVRegelung extends IPSModule
         switch ((string)$Ident) {
             case 'Loop':
                 $this->runLoop();
+                break;
+            case 'pv_manual_wb_enable':
+                $this->setManualVarByIdent('pv_manual_wb_enable', (bool)$Value);
+                break;
+            case 'pv_manual_wb_power_w':
+                $this->setManualVarByIdent('pv_manual_wb_power_w', max(0, (int)$Value));
+                break;
+            case 'pv_manual_wb_target_soc':
+                $this->setManualVarByIdent('pv_manual_wb_target_soc', max(0.0, min(100.0, (float)$Value)));
                 break;
             default:
                 throw new Exception('Invalid Ident: ' . (string)$Ident);
@@ -257,6 +271,11 @@ class PVRegelung extends IPSModule
                 'ramp_up_a_per_loop' => (int)$this->ReadPropertyInteger('WallboxRampUpA'),
                 'ramp_down_a_per_loop' => (int)$this->ReadPropertyInteger('WallboxRampDownA'),
                 'soft_off_grace_seconds' => (int)$this->ReadPropertyInteger('WallboxSoftOffGraceSeconds'),
+                'manual' => [
+                    'car_soc_var' => (int)$this->ReadPropertyInteger('WallboxManualCarSocVarID'),
+                    'default_target_soc' => (float)$this->ReadPropertyFloat('WallboxManualDefaultTargetSoc'),
+                    'default_power_w' => (int)$this->ReadPropertyInteger('WallboxManualDefaultPowerW'),
+                ],
             ],
             'ui' => [
                 'root_name' => (string)$this->ReadPropertyString('UIRootName'),
@@ -326,6 +345,40 @@ class PVRegelung extends IPSModule
         ]);
 
         $maxImport = (float)$CFG['surplus']['max_grid_import_w'];
+        [$manualActive, $manualPowerW, $manualTargetSoc, $carSoc] = $this->readManualWallboxConfig($CFG);
+
+        if ($manualActive) {
+            $manualDone = $carSoc >= $manualTargetSoc;
+            if ($manualDone) {
+                $this->setManualVarByIdent('pv_manual_wb_enable', false);
+                $manualActive = false;
+            }
+        }
+
+        if ($manualActive) {
+            [$wbOn, $wbA, $state] = $this->planWallboxManualPower($CFG, $state, $manualPowerW);
+            $this->applyHeatpump($CFG, $state, false);
+            $this->applyHeatingRodPercent($CFG, $state, 0);
+            $this->applyWallbox($CFG, $state, $wbOn, $wbA);
+
+            $this->updateUiVars($CFG, [
+                'hpOn' => 0,
+                'rodPercent' => 0,
+                'wbOn' => $wbOn ? 1 : 0,
+                'wbA' => $wbA,
+                'remainingW' => 0,
+                'weeklyRodActive' => 0,
+                'restSurplusW' => 0.0,
+                'manualActive' => 1,
+                'manualPowerW' => $manualPowerW,
+                'manualTargetSoc' => $manualTargetSoc,
+                'manualCarSoc' => $carSoc,
+            ]);
+
+            $this->saveState($state);
+            return;
+        }
+
         if ($importW > $maxImport) {
             $state = $this->wallboxSoftOff($CFG, $state);
             $this->applyHeatpump($CFG, $state, false);
@@ -365,6 +418,7 @@ class PVRegelung extends IPSModule
                 'remainingW' => $remainingW,
                 'weeklyRodActive' => 0,
                 'restSurplusW' => $restSurplusW,
+                'manualActive' => 0,
             ]);
 
             $this->saveState($state);
@@ -406,6 +460,7 @@ class PVRegelung extends IPSModule
             'remainingW' => $remainingW,
             'weeklyRodActive' => $needWeeklyRod ? 1 : 0,
             'restSurplusW' => $restSurplusW,
+            'manualActive' => 0,
         ]);
 
         $this->saveState($state);
@@ -688,6 +743,72 @@ class PVRegelung extends IPSModule
         return max(0.0, (float)$amps) * $voltage * $phases;
     }
 
+    private function readManualWallboxConfig(array $CFG): array
+    {
+        $root = $this->ensureCategoryByIdent($this->InstanceID, 'pv_ui_root', (string)($CFG['ui']['root_name'] ?? 'PV Regelung'));
+        $cWb = $this->ensureCategoryByIdent($root, 'pv_ui_wb', 'Wallbox');
+
+        $active = (bool)$this->readVarByIdent($cWb, 'pv_manual_wb_enable', false);
+        $powerW = (int)$this->readVarByIdent($cWb, 'pv_manual_wb_power_w', (int)($CFG['wallbox']['manual']['default_power_w'] ?? 4200));
+        $targetSoc = (float)$this->readVarByIdent($cWb, 'pv_manual_wb_target_soc', (float)($CFG['wallbox']['manual']['default_target_soc'] ?? 80.0));
+
+        $carSocVar = (int)($CFG['wallbox']['manual']['car_soc_var'] ?? 0);
+        $carSoc = ($carSocVar > 0) ? (float)$this->readVar($carSocVar, 0.0) : 0.0;
+
+        return [
+            $active,
+            max(0, $powerW),
+            max(0.0, min(100.0, $targetSoc)),
+            max(0.0, min(100.0, $carSoc)),
+        ];
+    }
+
+    private function planWallboxManualPower(array $CFG, array $state, int $manualPowerW): array
+    {
+        if (!($CFG['wallbox']['enabled'] ?? false)) return [false, 0, $state];
+
+        $enableVar = (int)($CFG['wallbox']['enable_var'] ?? 0);
+        $setA = (int)($CFG['wallbox']['set_current_a_var'] ?? 0);
+        if ($enableVar <= 0 || $setA <= 0) return [false, 0, $state];
+
+        $state = $this->ensureWallboxPhaseState($CFG, $state);
+        $state = $this->decideAndApplyWallboxPhases($CFG, $state, (float)$manualPowerW);
+
+        $phases = (int)($state['wb_phases'] ?? (int)($CFG['wallbox']['phases_3p'] ?? 3));
+        $voltage = (float)($CFG['wallbox']['voltage_v'] ?? 230.0);
+
+        $minA = (int)($CFG['wallbox']['min_a'] ?? 6);
+        $maxA = (int)($CFG['wallbox']['max_a'] ?? 16);
+        $step = max(1, (int)($CFG['wallbox']['step_a'] ?? 1));
+        $rampUp = max(1, (int)($CFG['wallbox']['ramp_up_a_per_loop'] ?? 1));
+        $rampDown = max(1, (int)($CFG['wallbox']['ramp_down_a_per_loop'] ?? 1));
+
+        $rawA = (int)floor(((float)$manualPowerW) / max(1.0, $voltage * $phases));
+        $targetA = (int)(floor($rawA / $step) * $step);
+        $targetA = max($minA, min($maxA, $targetA));
+
+        $now = time();
+        $isOn = (bool)($state['wb_is_on'] ?? false);
+        $lastOn = (int)($state['wb_last_on_ts'] ?? 0);
+        $lastOff = (int)($state['wb_last_off_ts'] ?? 0);
+
+        $canTurnOn = (!$isOn) && (($now - $lastOff) >= (int)($CFG['wallbox']['min_off_seconds'] ?? 120));
+        $canTurnOff = ($isOn) && (($now - $lastOn) >= (int)($CFG['wallbox']['min_on_seconds'] ?? 180));
+
+        if ($manualPowerW <= 0) {
+            if (!$isOn || $canTurnOff) return [false, 0, $state];
+            return [true, 0, $state];
+        }
+
+        if (!$isOn && !$canTurnOn) return [false, 0, $state];
+
+        $curA = (int)$this->readVar($setA, 0);
+        if (!$isOn) $curA = 0;
+
+        $newA = $this->moveTowardsInt($curA, $targetA, $rampUp, $rampDown);
+        return [true, max($minA, $newA), $state];
+    }
+
     private function applyHeatpump(array $CFG, array &$state, bool $on): void
     {
         $varId = (int)($CFG['heatpump']['force_run_var'] ?? 0);
@@ -781,6 +902,7 @@ class PVRegelung extends IPSModule
         $this->ensureProfileFloat('PV_kW', ' kW', 2, 0.0, 0.0, 0.01);
         $this->ensureProfileFloat('PV_PCT', ' %', 0, 0.0, 100.0, 1.0);
         $this->ensureProfileInt('PV_A', ' A', 0, 0, 0, 1);
+        $this->ensureProfileInt('PV_WI', ' W', 0, 0, 0, 1);
 
         $root = $this->ensureCategoryByIdent($this->InstanceID, 'pv_ui_root', (string)($CFG['ui']['root_name'] ?? 'PV Regelung'));
 
@@ -808,6 +930,10 @@ class PVRegelung extends IPSModule
         $this->ensureVariableByIdent($cWb, 'pv_wb_power_kw', 'Leistung Ist', 2, 'PV_kW');
         $this->ensureVariableByIdent($cWb, 'pv_wb_enabled', 'Freigabe', 0, '~Switch');
         $this->ensureVariableByIdent($cWb, 'pv_wb_target_a', 'Sollstrom', 1, 'PV_A');
+        $this->ensureActionVariableByIdent($cWb, 'pv_manual_wb_enable', 'Manuell laden aktiv', 0, '~Switch');
+        $this->ensureActionVariableByIdent($cWb, 'pv_manual_wb_power_w', 'Manuelle Ladeleistung', 1, 'PV_WI');
+        $this->ensureActionVariableByIdent($cWb, 'pv_manual_wb_target_soc', 'Manuelles Ziel-SOC', 2, 'PV_PCT');
+        $this->ensureVariableByIdent($cWb, 'pv_manual_wb_car_soc', 'Auto SOC (Ist)', 2, 'PV_PCT');
 
         $this->ensureVariableByIdent($cBat, 'pv_soc', 'SOC', 2, 'PV_PCT');
 
@@ -852,6 +978,10 @@ class PVRegelung extends IPSModule
             if ($en > 0 && @IPS_VariableExists($en)) $this->setVarByIdent($cWb, 'pv_wb_enabled', (bool)GetValue($en));
         }
         if (isset($v['wbA'])) $this->setVarByIdent($cWb, 'pv_wb_target_a', (int)$v['wbA']);
+        if (isset($v['manualActive'])) $this->setVarByIdent($cWb, 'pv_manual_wb_enable', ((int)$v['manualActive']) === 1);
+        if (isset($v['manualPowerW'])) $this->setVarByIdent($cWb, 'pv_manual_wb_power_w', (int)$v['manualPowerW']);
+        if (isset($v['manualTargetSoc'])) $this->setVarByIdent($cWb, 'pv_manual_wb_target_soc', (float)$v['manualTargetSoc']);
+        if (isset($v['manualCarSoc'])) $this->setVarByIdent($cWb, 'pv_manual_wb_car_soc', (float)$v['manualCarSoc']);
 
         if (isset($v['soc'])) $this->setVarByIdent($cBat, 'pv_soc', (float)$v['soc']);
 
@@ -1003,6 +1133,45 @@ class PVRegelung extends IPSModule
         }
         if ($profile !== '') @IPS_SetVariableCustomProfile($id, $profile);
         return (int)$id;
+    }
+
+    private function ensureActionVariableByIdent(int $parentId, string $ident, string $name, int $type, string $profile): int
+    {
+        $id = $this->ensureVariableByIdent($parentId, $ident, $name, $type, $profile);
+        // CustomAction erwartet eine Skript-ID. Die InstanceID führt zu Warnungen,
+        // daher Action auf "keine" setzen und Werte direkt über SetValue/Visualisierung ändern.
+        IPS_SetVariableCustomAction($id, 0);
+        return $id;
+    }
+
+    private function ensureManualWallboxDefaults(array $CFG): void
+    {
+        $root = $this->ensureCategoryByIdent($this->InstanceID, 'pv_ui_root', (string)($CFG['ui']['root_name'] ?? 'PV Regelung'));
+        $cWb = $this->ensureCategoryByIdent($root, 'pv_ui_wb', 'Wallbox');
+
+        $powerId = @IPS_GetObjectIDByIdent('pv_manual_wb_power_w', $cWb);
+        if ($powerId !== false && (int)GetValue((int)$powerId) <= 0) {
+            SetValue((int)$powerId, (int)($CFG['wallbox']['manual']['default_power_w'] ?? 4200));
+        }
+
+        $targetId = @IPS_GetObjectIDByIdent('pv_manual_wb_target_soc', $cWb);
+        if ($targetId !== false && (float)GetValue((int)$targetId) <= 0.0) {
+            SetValue((int)$targetId, (float)($CFG['wallbox']['manual']['default_target_soc'] ?? 80.0));
+        }
+    }
+
+    private function setManualVarByIdent(string $ident, $value): void
+    {
+        $root = $this->ensureCategoryByIdent($this->InstanceID, 'pv_ui_root', (string)$this->ReadPropertyString('UIRootName'));
+        $cWb = $this->ensureCategoryByIdent($root, 'pv_ui_wb', 'Wallbox');
+        $this->setVarByIdent($cWb, $ident, $value);
+    }
+
+    private function readVarByIdent(int $parentId, string $ident, $default)
+    {
+        $id = @IPS_GetObjectIDByIdent($ident, $parentId);
+        if ($id === false) return $default;
+        return GetValue((int)$id);
     }
 
     private function setVarByIdent(int $parentId, string $ident, $value): void
