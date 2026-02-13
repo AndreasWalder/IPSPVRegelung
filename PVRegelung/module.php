@@ -425,7 +425,6 @@ class PVRegelung extends IPSModule
                 'weeklyRodActive' => 0,
                 'restSurplusW' => 0.0,
                 'manualActive' => 1,
-                'manualRodOn' => 0,
                 'manualPowerW' => $manualPowerW,
                 'manualTargetSoc' => $manualTargetSoc,
                 'manualCarSoc' => $carSoc,
@@ -444,7 +443,6 @@ class PVRegelung extends IPSModule
                 'restSurplusW' => 0.0,
                 'rodOn' => 0,
                 'rodStage' => 0,
-                'manualRodOn' => 0,
                 'weeklyRodActive' => 0,
             ]);
             $this->saveState($state);
@@ -482,7 +480,6 @@ class PVRegelung extends IPSModule
                 'weeklyRodActive' => 0,
                 'restSurplusW' => $restSurplusW,
                 'manualActive' => 0,
-                'manualRodOn' => 0,
             ]);
 
             $this->saveState($state);
@@ -1084,7 +1081,7 @@ class PVRegelung extends IPSModule
         $this->ensureActionVariableByIdent($cHeat, 'pv_manual_rod_on', 'Heizstab Manuell EIN', 0, '~Switch');
         $daysId = @IPS_GetObjectIDByIdent('pv_rod_days_since_target', $cHeat);
         $hadDaysVar = ($daysId !== false);
-        $daysId = $this->ensureActionVariableByIdent($cHeat, 'pv_rod_days_since_target', 'Tage seit letzter Solltemperatur', 1, '~Intensity.100');
+        $daysId = $this->ensureActionVariableByIdent($cHeat, 'pv_rod_days_since_target', 'Tage seit letzter Solltemperatur', 1, 'Timer.Day');
         if (!$hadDaysVar) {
             SetValue((int)$daysId, max(0, min(60, (int)$CFG['heating_rod']['weekly']['days_after_target_reached'])));
         }
