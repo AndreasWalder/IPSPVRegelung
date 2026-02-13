@@ -311,10 +311,10 @@
                 },
                 {
                     "type": "NumberSpinner",
-                    "name": "HeatingRodWeeklyWeekday",
-                    "caption": "Wochentag (1=Mo ... 7=So)",
-                    "minimum": 1,
-                    "maximum": 7
+                    "name": "HeatingRodDaysAfterTargetReached",
+                    "caption": "Tage seit letzter Solltemperatur",
+                    "minimum": 0,
+                    "maximum": 60
                 },
                 {
                     "type": "ValidationTextBox",

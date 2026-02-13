@@ -51,6 +51,8 @@ declare(strict_types=1);
  *                  Startschwelle Überschuss einstellbar (Default 9kW), Weekly-Autostart bleibt erhalten.
  * 2026-02-13: v1.26 — Boiler-Solltemperatur ausschließlich als editierbare Visu-Variable „Boiler Solltemperatur“
  *                  im UI; Konfigurationsfelder „Heizstab Zieltemperatur“ und externe Soll-Var-ID entfernt.
+ * 2026-02-13: v1.27 — Heizstab stufig (1/2/3), manuelle Sofortsteuerung (EIN/AUS) und Wochenlogik
+ *                  auf „Tage seit letzter Solltemperatur-Erreichung“ umgestellt.
  */
 
 class PVRegelung extends IPSModule
@@ -114,7 +116,7 @@ class PVRegelung extends IPSModule
         $this->RegisterPropertyInteger('HeatingRodMinOffSeconds', 180);
 
         $this->RegisterPropertyBoolean('HeatingRodWeeklyEnabled', true);
-        $this->RegisterPropertyInteger('HeatingRodWeeklyWeekday', 7);
+        $this->RegisterPropertyInteger('HeatingRodDaysAfterTargetReached', 7);
         $this->RegisterPropertyString('HeatingRodWeeklyStart', '10:00');
         $this->RegisterPropertyString('HeatingRodWeeklyEnd', '16:00');
 
@@ -202,6 +204,10 @@ class PVRegelung extends IPSModule
                 $this->setHeatingVarByIdent('pv_rod_auto_mode', (bool)$Value);
                 $this->runLoop();
                 break;
+            case 'pv_manual_rod_on':
+                $this->setHeatingVarByIdent('pv_manual_rod_on', (bool)$Value);
+                $this->runLoop();
+                break;
             case 'pv_boiler_target_c':
                 $this->setHeatingVarByIdent('pv_boiler_target_c', max(0.0, min(90.0, (float)$Value)));
                 $this->runLoop();
@@ -284,7 +290,7 @@ class PVRegelung extends IPSModule
                 'min_off_seconds' => (int)$this->ReadPropertyInteger('HeatingRodMinOffSeconds'),
                 'weekly' => [
                     'enabled' => (bool)$this->ReadPropertyBoolean('HeatingRodWeeklyEnabled'),
-                    'weekday' => (int)$this->ReadPropertyInteger('HeatingRodWeeklyWeekday'),
+                    'days_after_target_reached' => (int)$this->ReadPropertyInteger('HeatingRodDaysAfterTargetReached'),
                     'start_hhmm' => (string)$this->ReadPropertyString('HeatingRodWeeklyStart'),
                     'end_hhmm' => (string)$this->ReadPropertyString('HeatingRodWeeklyEnd'),
                 ],
@@ -355,7 +361,7 @@ class PVRegelung extends IPSModule
 
         $this->writeHeatpumpSurplusSignal($CFG, $gridW, $exportW, $importW);
 
-        $rodPowerW = ((bool)($state['rod_is_on'] ?? false)) ? $this->heatingRodTotalPowerW($CFG) : 0.0;
+        $rodPowerW = $this->heatingRodPowerForStageW($CFG, (int)($state['rod_stage'] ?? 0));
 
         $battPowerW = 0.0;
         if (isset($CFG['battery']['charge_power']) && is_array($CFG['battery']['charge_power'])) {
@@ -382,6 +388,8 @@ class PVRegelung extends IPSModule
             'houseLoadW' => $houseLoadW,
             'boilerTargetC' => $this->readBoilerRodTargetC($CFG),
             'rodAutoMode' => $this->readHeatingRodAutoMode($CFG) ? 1 : 0,
+            'manualRodOn' => $this->readHeatingRodManualOn($CFG) ? 1 : 0,
+            'rodStage' => (int)($state['rod_stage'] ?? 0),
         ]);
 
         $maxImport = (float)$CFG['surplus']['max_grid_import_w'];
@@ -398,18 +406,20 @@ class PVRegelung extends IPSModule
         if ($manualActive) {
             [$wbOn, $wbA, $state] = $this->planWallboxManualPower($CFG, $state, $manualPowerW);
             $this->applyHeatpump($CFG, $state, false);
-            $this->applyHeatingRod($CFG, $state, false);
+            $this->applyHeatingRodStage($CFG, $state, 0);
             $this->applyWallbox($CFG, $state, $wbOn, $wbA);
 
             $this->updateUiVars($CFG, [
                 'hpOn' => 0,
                 'rodOn' => 0,
+                'rodStage' => 0,
                 'wbOn' => $wbOn ? 1 : 0,
                 'wbA' => $wbA,
                 'remainingW' => 0,
                 'weeklyRodActive' => 0,
                 'restSurplusW' => 0.0,
                 'manualActive' => 1,
+                'manualRodOn' => 0,
                 'manualPowerW' => $manualPowerW,
                 'manualTargetSoc' => $manualTargetSoc,
                 'manualCarSoc' => $carSoc,
@@ -422,9 +432,15 @@ class PVRegelung extends IPSModule
         if ($importW > $maxImport) {
             $state = $this->wallboxSoftOff($CFG, $state);
             $this->applyHeatpump($CFG, $state, false);
-            $this->applyHeatingRod($CFG, $state, false);
+            $this->applyHeatingRodStage($CFG, $state, 0);
             $this->applyWallbox($CFG, $state, (bool)($state['wb_soft_on'] ?? false), (int)($state['wb_soft_a'] ?? 0));
-            $this->updateUiVars($CFG, ['restSurplusW' => 0.0]);
+            $this->updateUiVars($CFG, [
+                'restSurplusW' => 0.0,
+                'rodOn' => 0,
+                'rodStage' => 0,
+                'manualRodOn' => 0,
+                'weeklyRodActive' => 0,
+            ]);
             $this->saveState($state);
             return;
         }
@@ -443,7 +459,7 @@ class PVRegelung extends IPSModule
             [$wbOn, $wbA, $state] = $this->planWallboxRamped($CFG, $state, $remainingW);
 
             $this->applyHeatpump($CFG, $state, false);
-            $this->applyHeatingRod($CFG, $state, false);
+            $this->applyHeatingRodStage($CFG, $state, 0);
             $this->applyWallbox($CFG, $state, $wbOn, $wbA);
 
             $wbTargetW = $this->wallboxPowerFromA($CFG, $state, $wbA);
@@ -453,43 +469,55 @@ class PVRegelung extends IPSModule
             $this->updateUiVars($CFG, [
                 'hpOn' => 0,
                 'rodOn' => 0,
+                'rodStage' => 0,
                 'wbOn' => $wbOn ? 1 : 0,
                 'wbA' => $wbA,
                 'remainingW' => $remainingW,
                 'weeklyRodActive' => 0,
                 'restSurplusW' => $restSurplusW,
                 'manualActive' => 0,
+                'manualRodOn' => 0,
             ]);
 
             $this->saveState($state);
             return;
         }
 
-        $weeklyWindow = $this->isWeeklyWindow($CFG['heating_rod']['weekly']);
+        $weeklyWindow = $this->isHeatingRodWindow($CFG['heating_rod']['weekly'], $state);
         $rodAllowedByTemp = $boilerTemp >= (float)$CFG['boiler']['rod_min_start_temp_c'];
         $rodAutoMode = $this->readHeatingRodAutoMode($CFG);
+        $rodManualOn = $this->readHeatingRodManualOn($CFG);
         $rodTargetC = $this->readBoilerRodTargetC($CFG);
+        if ($boilerTemp >= $rodTargetC) {
+            $state['rod_last_target_reached_ts'] = time();
+        }
         $needWeeklyRod = $rodAutoMode
             && $weeklyWindow
             && $rodAllowedByTemp
             && ($boilerTemp < ($rodTargetC - 0.2));
 
-        if (!($CFG['priority']['heatpump_first'] ?? true)) {
-            [$rodOn, $remainingW] = $this->planHeatingRod($CFG, $state, $needWeeklyRod, $boilerTemp, $remainingW);
+        $rodStage = 0;
+
+        if ($rodManualOn) {
+            $rodStage = $this->maxHeatingRodStage($CFG);
+        } elseif (!($CFG['priority']['heatpump_first'] ?? true)) {
+            [$rodStage, $remainingW] = $this->planHeatingRodStage($CFG, $state, $needWeeklyRod, $boilerTemp, $remainingW);
             [$hpOn, $remainingW] = $this->planHeatpump($CFG, $state, $boilerTemp, $remainingW);
         } else {
             [$hpOn, $remainingW] = $this->planHeatpump($CFG, $state, $boilerTemp, $remainingW);
-            [$rodOn, $remainingW] = $this->planHeatingRod($CFG, $state, $needWeeklyRod, $boilerTemp, $remainingW);
+            [$rodStage, $remainingW] = $this->planHeatingRodStage($CFG, $state, $needWeeklyRod, $boilerTemp, $remainingW);
         }
+
+        $rodOn = $rodStage > 0;
 
         [$wbOn, $wbA, $state] = $this->planWallboxRamped($CFG, $state, $remainingW);
 
         $this->applyHeatpump($CFG, $state, $hpOn);
-        $this->applyHeatingRod($CFG, $state, $rodOn);
+        $this->applyHeatingRodStage($CFG, $state, $rodStage);
         $this->applyWallbox($CFG, $state, $wbOn, $wbA);
 
         $hpUsedW = $hpOn ? $this->heatpumpPowerW($CFG) : 0.0;
-        $rodUsedW = $rodOn ? $this->heatingRodTotalPowerW($CFG) : 0.0;
+        $rodUsedW = $this->heatingRodPowerForStageW($CFG, $rodStage);
         $wbTargetW = $this->wallboxPowerFromA($CFG, $state, $wbA);
         $reserveW = (float)($CFG['wallbox']['reserve_w'] ?? 0.0);
 
@@ -498,12 +526,14 @@ class PVRegelung extends IPSModule
         $this->updateUiVars($CFG, [
             'hpOn' => $hpOn ? 1 : 0,
             'rodOn' => $rodOn ? 1 : 0,
+            'rodStage' => $rodStage,
             'wbOn' => $wbOn ? 1 : 0,
             'wbA' => $wbA,
             'remainingW' => $remainingW,
             'weeklyRodActive' => $needWeeklyRod ? 1 : 0,
             'restSurplusW' => $restSurplusW,
             'manualActive' => 0,
+            'manualRodOn' => $rodManualOn ? 1 : 0,
         ]);
 
         $this->saveState($state);
@@ -546,35 +576,49 @@ class PVRegelung extends IPSModule
         return [$desiredOn, $availableW];
     }
 
-    private function planHeatingRod(array $CFG, array &$state, bool $weekly, float $boilerTemp, float $availableW): array
+    private function planHeatingRodStage(array $CFG, array &$state, bool $weekly, float $boilerTemp, float $availableW): array
     {
-        if (!($CFG['heating_rod']['enabled'] ?? false)) return [false, $availableW];
-        if (!$weekly) return [false, $availableW];
+        if (!($CFG['heating_rod']['enabled'] ?? false)) return [0, $availableW];
+        if (!$weekly) return [0, $availableW];
 
         $target = $this->readBoilerRodTargetC($CFG);
-        if ($boilerTemp >= $target) return [false, $availableW];
+        if ($boilerTemp >= $target) return [0, $availableW];
 
         $minSurplus = (float)$CFG['heating_rod']['min_surplus_w'];
-        $rodPowerW = $this->heatingRodTotalPowerW($CFG);
-        if ($rodPowerW <= 0.0 || $availableW < $minSurplus || $availableW < $rodPowerW) return [false, $availableW];
+        if ($availableW < $minSurplus) return [0, $availableW];
+
+        $maxStage = $this->maxHeatingRodStage($CFG);
+        if ($maxStage <= 0) return [0, $availableW];
+
+        $powerPerStage = max(0.0, (float)($CFG['heating_rod']['power_per_unit_w'] ?? 0.0));
+        if ($powerPerStage <= 0.0) return [0, $availableW];
+
+        $desiredStage = min($maxStage, (int)floor($availableW / $powerPerStage));
+        if ($desiredStage <= 0) return [0, $availableW];
 
         $now = time();
-        $isOn = (bool)($state['rod_is_on'] ?? false);
+        $isOn = ((int)($state['rod_stage'] ?? 0)) > 0;
         $lastOn  = (int)($state['rod_last_on_ts'] ?? 0);
         $lastOff = (int)($state['rod_last_off_ts'] ?? 0);
 
         $canTurnOn  = (!$isOn) && (($now - $lastOff) >= (int)$CFG['heating_rod']['min_off_seconds']);
         $canTurnOff = ($isOn)  && (($now - $lastOn)  >= (int)$CFG['heating_rod']['min_on_seconds']);
 
-        $desiredOn = $isOn;
-        if (!$isOn && $canTurnOn) $desiredOn = true;
-        if ($isOn && $canTurnOff && (($availableW < $minSurplus * 0.8) || ($boilerTemp >= $target))) $desiredOn = false;
-
-        if ($desiredOn) {
-            $availableW = max(0.0, $availableW - $rodPowerW);
+        if (!$isOn && !$canTurnOn) return [0, $availableW];
+        if ($isOn && !$canTurnOff) {
+            $currentStage = max(0, min($maxStage, (int)($state['rod_stage'] ?? 0)));
+            $usedW = $this->heatingRodPowerForStageW($CFG, $currentStage);
+            return [$currentStage, max(0.0, $availableW - $usedW)];
         }
 
-        return [$desiredOn, $availableW];
+        if ($isOn && (($availableW < $minSurplus * 0.8) || ($boilerTemp >= $target))) {
+            return [0, $availableW];
+        }
+
+        $usedW = $this->heatingRodPowerForStageW($CFG, $desiredStage);
+        $availableW = max(0.0, $availableW - $usedW);
+
+        return [$desiredStage, $availableW];
     }
 
     private function planWallboxRamped(array $CFG, array $state, float $availableW): array
@@ -861,43 +905,45 @@ class PVRegelung extends IPSModule
         }
     }
 
-    private function applyHeatingRod(array $CFG, array &$state, bool $on): void
+    private function applyHeatingRodStage(array $CFG, array &$state, int $stage): void
     {
         $vars = array_values(array_filter((array)($CFG['heating_rod']['switch_vars'] ?? []), function ($id) {
             return (int)$id > 0;
         }));
         if (count($vars) === 0) return;
 
+        $targetStage = max(0, min(count($vars), $stage));
         $now = time();
         $isOn = (bool)($state['rod_is_on'] ?? false);
+        $currentStage = max(0, min(count($vars), (int)($state['rod_stage'] ?? 0)));
 
-        if ($on && !$isOn) {
-            foreach ($vars as $varId) $this->safeSetBool((int)$varId, true);
+        foreach ($vars as $idx => $varId) {
+            $this->safeSetBool((int)$varId, $idx < $targetStage);
+        }
+
+        $state['rod_stage'] = $targetStage;
+        $isNowOn = $targetStage > 0;
+
+        if ($isNowOn && !$isOn) {
             $state['rod_is_on'] = true;
             $state['rod_last_on_ts'] = $now;
             return;
         }
 
-        if (!$on && $isOn) {
-            foreach ($vars as $varId) $this->safeSetBool((int)$varId, false);
+        if (!$isNowOn && $isOn) {
             $state['rod_is_on'] = false;
             $state['rod_last_off_ts'] = $now;
             return;
         }
 
-        if ($on && $isOn) {
-            foreach ($vars as $varId) $this->safeSetBool((int)$varId, true);
+        if ($isNowOn && $isOn && $currentStage !== $targetStage) {
+            $state['rod_last_on_ts'] = $now;
         }
     }
 
     private function heatingRodTotalPowerW(array $CFG): float
     {
-        $vars = array_values(array_filter((array)($CFG['heating_rod']['switch_vars'] ?? []), function ($id) {
-            return (int)$id > 0;
-        }));
-        $count = count($vars);
-        if ($count <= 0) return 0.0;
-        return max(0.0, (float)($CFG['heating_rod']['power_per_unit_w'] ?? 0.0)) * $count;
+        return $this->heatingRodPowerForStageW($CFG, $this->maxHeatingRodStage($CFG));
     }
 
     private function readHeatingRodAutoMode(array $CFG): bool
@@ -905,6 +951,13 @@ class PVRegelung extends IPSModule
         $root = $this->ensureCategoryByIdent($this->InstanceID, 'pv_ui_root', (string)($CFG['ui']['root_name'] ?? 'PV Regelung'));
         $cHeat = $this->ensureCategoryByIdent($root, 'pv_ui_heat', 'Heizung');
         return (bool)$this->readVarByIdent($cHeat, 'pv_rod_auto_mode', true);
+    }
+
+    private function readHeatingRodManualOn(array $CFG): bool
+    {
+        $root = $this->ensureCategoryByIdent($this->InstanceID, 'pv_ui_root', (string)($CFG['ui']['root_name'] ?? 'PV Regelung'));
+        $cHeat = $this->ensureCategoryByIdent($root, 'pv_ui_heat', 'Heizung');
+        return (bool)$this->readVarByIdent($cHeat, 'pv_manual_rod_on', false);
     }
 
     private function readBoilerRodTargetC(array $CFG): float
@@ -1000,16 +1053,26 @@ class PVRegelung extends IPSModule
         $this->ensureVariableByIdent($cBat, 'pv_soc', 'SOC', 2, 'PV_PCT');
 
         $this->moveObjectByIdent($root, $cHeat, 'pv_rod_auto_mode');
+        $this->moveObjectByIdent($root, $cHeat, 'pv_manual_rod_on');
         $this->moveObjectByIdent($root, $cHeat, 'pv_dbg_weekly_active');
         $this->moveObjectByIdent($root, $cHeat, 'pv_dbg_hp_on');
         $this->moveObjectByIdent($root, $cHeat, 'pv_dbg_rod_on');
+        $this->moveObjectByIdent($root, $cHeat, 'pv_dbg_rod_stage');
+        $this->moveObjectByIdent($root, $cHeat, 'pv_dbg_rod1_on');
+        $this->moveObjectByIdent($root, $cHeat, 'pv_dbg_rod2_on');
+        $this->moveObjectByIdent($root, $cHeat, 'pv_dbg_rod3_on');
         $this->moveObjectByIdent($root, $cHeat, 'pv_dbg_hp_running');
         $this->moveObjectByIdent($root, $cHeat, 'pv_dbg_hp_power_kw');
 
         $this->ensureActionVariableByIdent($cHeat, 'pv_rod_auto_mode', 'Heizstab Automatik', 0, '~Switch');
+        $this->ensureActionVariableByIdent($cHeat, 'pv_manual_rod_on', 'Heizstab Manuell EIN', 0, '~Switch');
         $this->ensureVariableByIdent($cHeat, 'pv_dbg_weekly_active', 'Weekly Heizstab aktiv', 0, '~Switch');
         $this->ensureVariableByIdent($cHeat, 'pv_dbg_hp_on', 'Wärmepumpe an', 0, '~Switch');
         $this->ensureVariableByIdent($cHeat, 'pv_dbg_rod_on', 'Heizstab aktiv', 0, '~Switch');
+        $this->ensureVariableByIdent($cHeat, 'pv_dbg_rod_stage', 'Heizstab Stufe', 1, '~Intensity.100');
+        $this->ensureVariableByIdent($cHeat, 'pv_dbg_rod1_on', 'Heizstab 1 aktiv', 0, '~Switch');
+        $this->ensureVariableByIdent($cHeat, 'pv_dbg_rod2_on', 'Heizstab 2 aktiv', 0, '~Switch');
+        $this->ensureVariableByIdent($cHeat, 'pv_dbg_rod3_on', 'Heizstab 3 aktiv', 0, '~Switch');
         $this->ensureVariableByIdent($cHeat, 'pv_dbg_hp_running', 'WP läuft (Ist)', 0, '~Switch');
         $this->ensureVariableByIdent($cHeat, 'pv_dbg_hp_power_kw', 'WP Leistung (Ist)', 2, 'PV_kW');
 
@@ -1054,9 +1117,14 @@ class PVRegelung extends IPSModule
         if (isset($v['soc'])) $this->setVarByIdent($cBat, 'pv_soc', (float)$v['soc']);
 
         if (isset($v['rodAutoMode'])) $this->setVarByIdent($cHeat, 'pv_rod_auto_mode', ((int)$v['rodAutoMode']) === 1);
+        if (isset($v['manualRodOn'])) $this->setVarByIdent($cHeat, 'pv_manual_rod_on', ((int)$v['manualRodOn']) === 1);
         if (isset($v['weeklyRodActive'])) $this->setVarByIdent($cHeat, 'pv_dbg_weekly_active', ((int)$v['weeklyRodActive']) === 1);
         if (isset($v['hpOn']))            $this->setVarByIdent($cHeat, 'pv_dbg_hp_on', ((int)$v['hpOn']) === 1);
         if (isset($v['rodOn']))           $this->setVarByIdent($cHeat, 'pv_dbg_rod_on', ((int)$v['rodOn']) === 1);
+        if (isset($v['rodStage']))        $this->setVarByIdent($cHeat, 'pv_dbg_rod_stage', max(0, min(3, (int)$v['rodStage'])));
+        if (isset($v['rodStage']))        $this->setVarByIdent($cHeat, 'pv_dbg_rod1_on', ((int)$v['rodStage']) >= 1);
+        if (isset($v['rodStage']))        $this->setVarByIdent($cHeat, 'pv_dbg_rod2_on', ((int)$v['rodStage']) >= 2);
+        if (isset($v['rodStage']))        $this->setVarByIdent($cHeat, 'pv_dbg_rod3_on', ((int)$v['rodStage']) >= 3);
         if (isset($v['wbOn']))            $this->setVarByIdent($root, 'pv_dbg_wb_on', ((int)$v['wbOn']) === 1);
         if (isset($v['remainingW']))      $this->setVarByIdent($root, 'pv_dbg_remaining_kw', $this->wToKw((float)$v['remainingW']));
 
@@ -1095,17 +1163,20 @@ class PVRegelung extends IPSModule
         return $w / 1000.0;
     }
 
-    private function isWeeklyWindow(array $weeklyCfg): bool
+    private function isHeatingRodWindow(array $weeklyCfg, array $state): bool
     {
         if (!($weeklyCfg['enabled'] ?? false)) return false;
 
-        $weekday = (int)($weeklyCfg['weekday'] ?? 7);
+        $days = max(0, (int)($weeklyCfg['days_after_target_reached'] ?? 7));
         $start = (string)($weeklyCfg['start_hhmm'] ?? '10:00');
         $end   = (string)($weeklyCfg['end_hhmm'] ?? '16:00');
 
         $now = time();
-        $w = (int)date('N', $now);
-        if ($w !== $weekday) return false;
+        $lastReached = (int)($state['rod_last_target_reached_ts'] ?? 0);
+        if ($lastReached > 0) {
+            $elapsedDays = ($now - $lastReached) / 86400.0;
+            if ($elapsedDays < $days) return false;
+        }
 
         $mins = ((int)date('H', $now) * 60) + (int)date('i', $now);
 
@@ -1117,6 +1188,20 @@ class PVRegelung extends IPSModule
 
         if ($endM <= $startM) return ($mins >= $startM) || ($mins <= $endM);
         return ($mins >= $startM) && ($mins <= $endM);
+    }
+
+    private function maxHeatingRodStage(array $CFG): int
+    {
+        $vars = array_values(array_filter((array)($CFG['heating_rod']['switch_vars'] ?? []), function ($id) {
+            return (int)$id > 0;
+        }));
+        return max(0, min(3, count($vars)));
+    }
+
+    private function heatingRodPowerForStageW(array $CFG, int $stage): float
+    {
+        $stage = max(0, min($this->maxHeatingRodStage($CFG), $stage));
+        return max(0.0, (float)($CFG['heating_rod']['power_per_unit_w'] ?? 0.0)) * $stage;
     }
 
     private function parseHHMM(string $hhmm): array
