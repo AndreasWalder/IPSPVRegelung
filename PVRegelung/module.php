@@ -306,8 +306,8 @@ class PVRegelung extends IPSModule
         }
 
         $hpPowerForHouseW = $hpRunning ? $hpPowerW : 0.0;
-        //$battDischargeForHouseW = ($battPowerW < 0.0) ? $battPowerW : 0.0;
-        $houseLoadW = max(0.0, $buildingLoadW - $wallboxChargeW - $hpPowerForHouseW - $rodPowerW);
+        $battDischargeForHouseW = ($battPowerW < 0.0) ? $battPowerW : 0.0;
+        $houseLoadW = max(0.0, $buildingLoadW - $wallboxChargeW - $hpPowerForHouseW - $rodPowerW + ($battDischargeForHouseW * -1));
 
         $this->updateUiVars($CFG, [
             'pv1W' => $pv1W,
