@@ -199,11 +199,11 @@ class PVRegelung extends IPSModule
                 $this->runLoop();
                 break;
             case 'pv_rod_auto_mode':
-                $this->setManualVarByIdent('pv_rod_auto_mode', (bool)$Value);
+                $this->setHeatingVarByIdent('pv_rod_auto_mode', (bool)$Value);
                 $this->runLoop();
                 break;
             case 'pv_boiler_target_c':
-                $this->setManualVarByIdent('pv_boiler_target_c', max(0.0, min(90.0, (float)$Value)));
+                $this->setHeatingVarByIdent('pv_boiler_target_c', max(0.0, min(90.0, (float)$Value)));
                 $this->runLoop();
                 break;
             default:
@@ -901,6 +901,34 @@ class PVRegelung extends IPSModule
     private function readHeatingRodAutoMode(array $CFG): bool
     {
         $root = $this->ensureCategoryByIdent($this->InstanceID, 'pv_ui_root', (string)($CFG['ui']['root_name'] ?? 'PV Regelung'));
+        $cHeat = $this->ensureCategoryByIdent($root, 'pv_ui_heat', 'Heizung');
+        return (bool)$this->readVarByIdent($cHeat, 'pv_rod_auto_mode', true);
+    }
+
+    private function readBoilerRodTargetC(array $CFG): float
+    {
+        $default = (float)($CFG['boiler']['rod_target_c'] ?? 60.0);
+        $varId = (int)($CFG['boiler']['rod_target_var'] ?? 0);
+        if ($varId > 0) {
+            return max(0.0, min(90.0, (float)$this->readVar($varId, $default)));
+        }
+
+        $root = $this->ensureCategoryByIdent($this->InstanceID, 'pv_ui_root', (string)($CFG['ui']['root_name'] ?? 'PV Regelung'));
+        $cHeat = $this->ensureCategoryByIdent($root, 'pv_ui_heat', 'Heizung');
+        return max(0.0, min(90.0, (float)$this->readVarByIdent($cHeat, 'pv_boiler_target_c', $default)));
+    }
+
+    private function heatingRodTotalPowerW(array $CFG): float
+    {
+        $vars = array_values(array_filter((array)($CFG['heating_rod']['switch_vars'] ?? []), static fn ($id) => (int)$id > 0));
+        $count = count($vars);
+        if ($count <= 0) return 0.0;
+        return max(0.0, (float)($CFG['heating_rod']['power_per_unit_w'] ?? 0.0)) * $count;
+    }
+
+    private function readHeatingRodAutoMode(array $CFG): bool
+    {
+        $root = $this->ensureCategoryByIdent($this->InstanceID, 'pv_ui_root', (string)($CFG['ui']['root_name'] ?? 'PV Regelung'));
         return (bool)$this->readVarByIdent($root, 'pv_rod_auto_mode', true);
     }
 
@@ -972,6 +1000,7 @@ class PVRegelung extends IPSModule
         $cLoad = $this->ensureCategoryByIdent($root, 'pv_ui_load', 'Gebäude Verbrauch');
         $cWb   = $this->ensureCategoryByIdent($root, 'pv_ui_wb', 'Wallbox');
         $cBat  = $this->ensureCategoryByIdent($root, 'pv_ui_bat', 'Batterieladezustand');
+        $cHeat = $this->ensureCategoryByIdent($root, 'pv_ui_heat', 'Heizung');
 
         $this->ensureVariableByIdent($cProd, 'pv_prod_total_kw', 'Produktion gesamt', 2, 'PV_kW');
         $this->ensureVariableByIdent($cProd, 'pv_prod_pv1_kw', 'PV1', 2, 'PV_kW');
@@ -989,6 +1018,9 @@ class PVRegelung extends IPSModule
         $this->ensureVariableByIdent($cLoad, 'pv_boiler_temp', 'Boiler Temperatur', 2, '~Temperature');
         $this->ensureActionVariableByIdent($cLoad, 'pv_boiler_target_c', 'Boiler Solltemperatur', 2, '~Temperature');
 
+        $this->moveObjectByIdent($cLoad, $cHeat, 'pv_boiler_target_c');
+        $this->ensureActionVariableByIdent($cHeat, 'pv_boiler_target_c', 'Boiler Solltemperatur', 2, '~Temperature');
+
         $this->ensureVariableByIdent($cWb, 'pv_wb_power_kw', 'Leistung Ist', 2, 'PV_kW');
         $this->removeVariableByIdent($cWb, 'pv_wb_enabled');
         $this->ensureVariableByIdent($cWb, 'pv_wb_target_a', 'Sollstrom', 1, 'PV_A');
@@ -1000,15 +1032,22 @@ class PVRegelung extends IPSModule
 
         $this->ensureVariableByIdent($cBat, 'pv_soc', 'SOC', 2, 'PV_PCT');
 
-        $this->ensureActionVariableByIdent($root, 'pv_rod_auto_mode', 'Heizstab Automatik', 0, '~Switch');
-        $this->ensureVariableByIdent($root, 'pv_dbg_weekly_active', 'Weekly Heizstab aktiv', 0, '~Switch');
-        $this->ensureVariableByIdent($root, 'pv_dbg_hp_on', 'Wärmepumpe an', 0, '~Switch');
-        $this->ensureVariableByIdent($root, 'pv_dbg_rod_on', 'Heizstab aktiv', 0, '~Switch');
+        $this->moveObjectByIdent($root, $cHeat, 'pv_rod_auto_mode');
+        $this->moveObjectByIdent($root, $cHeat, 'pv_dbg_weekly_active');
+        $this->moveObjectByIdent($root, $cHeat, 'pv_dbg_hp_on');
+        $this->moveObjectByIdent($root, $cHeat, 'pv_dbg_rod_on');
+        $this->moveObjectByIdent($root, $cHeat, 'pv_dbg_hp_running');
+        $this->moveObjectByIdent($root, $cHeat, 'pv_dbg_hp_power_kw');
+
+        $this->ensureActionVariableByIdent($cHeat, 'pv_rod_auto_mode', 'Heizstab Automatik', 0, '~Switch');
+        $this->ensureVariableByIdent($cHeat, 'pv_dbg_weekly_active', 'Weekly Heizstab aktiv', 0, '~Switch');
+        $this->ensureVariableByIdent($cHeat, 'pv_dbg_hp_on', 'Wärmepumpe an', 0, '~Switch');
+        $this->ensureVariableByIdent($cHeat, 'pv_dbg_rod_on', 'Heizstab aktiv', 0, '~Switch');
+        $this->ensureVariableByIdent($cHeat, 'pv_dbg_hp_running', 'WP läuft (Ist)', 0, '~Switch');
+        $this->ensureVariableByIdent($cHeat, 'pv_dbg_hp_power_kw', 'WP Leistung (Ist)', 2, 'PV_kW');
+
         $this->ensureVariableByIdent($root, 'pv_dbg_wb_on', 'Wallbox aktiv', 0, '~Switch');
         $this->ensureVariableByIdent($root, 'pv_dbg_remaining_kw', 'Rest-Überschuss vor WB', 2, 'PV_kW');
-
-        $this->ensureVariableByIdent($root, 'pv_dbg_hp_running', 'WP läuft (Ist)', 0, '~Switch');
-        $this->ensureVariableByIdent($root, 'pv_dbg_hp_power_kw', 'WP Leistung (Ist)', 2, 'PV_kW');
     }
 
     private function updateUiVars(array $CFG, array $v): void
@@ -1020,6 +1059,7 @@ class PVRegelung extends IPSModule
         $cLoad = $this->ensureCategoryByIdent($root, 'pv_ui_load', 'Gebäude Verbrauch');
         $cWb   = $this->ensureCategoryByIdent($root, 'pv_ui_wb', 'Wallbox');
         $cBat  = $this->ensureCategoryByIdent($root, 'pv_ui_bat', 'Batterieladezustand');
+        $cHeat = $this->ensureCategoryByIdent($root, 'pv_ui_heat', 'Heizung');
 
         if (isset($v['pvTotalW'])) $this->setVarByIdent($cProd, 'pv_prod_total_kw', $this->wToKw((float)$v['pvTotalW']));
         if (isset($v['pv1W']))     $this->setVarByIdent($cProd, 'pv_prod_pv1_kw', $this->wToKw((float)$v['pv1W']));
@@ -1035,7 +1075,7 @@ class PVRegelung extends IPSModule
         if (isset($v['buildingLoadW'])) $this->setVarByIdent($cLoad, 'pv_load_kw', $this->wToKw((float)$v['buildingLoadW']));
         if (isset($v['houseLoadW']))    $this->setVarByIdent($cLoad, 'pv_house_load_kw', $this->wToKw((float)$v['houseLoadW']));
         if (isset($v['boilerTemp']))    $this->setVarByIdent($cLoad, 'pv_boiler_temp', (float)$v['boilerTemp']);
-        if (isset($v['boilerTargetC'])) $this->setVarByIdent($cLoad, 'pv_boiler_target_c', (float)$v['boilerTargetC']);
+        if (isset($v['boilerTargetC'])) $this->setVarByIdent($cHeat, 'pv_boiler_target_c', (float)$v['boilerTargetC']);
 
         if (isset($v['wallboxChargeW'])) $this->setVarByIdent($cWb, 'pv_wb_power_kw', $this->wToKw((float)$v['wallboxChargeW']));
         if (isset($v['wbA'])) $this->setVarByIdent($cWb, 'pv_wb_target_a', (int)$v['wbA']);
@@ -1046,15 +1086,15 @@ class PVRegelung extends IPSModule
 
         if (isset($v['soc'])) $this->setVarByIdent($cBat, 'pv_soc', (float)$v['soc']);
 
-        if (isset($v['rodAutoMode'])) $this->setVarByIdent($root, 'pv_rod_auto_mode', ((int)$v['rodAutoMode']) === 1);
-        if (isset($v['weeklyRodActive'])) $this->setVarByIdent($root, 'pv_dbg_weekly_active', ((int)$v['weeklyRodActive']) === 1);
-        if (isset($v['hpOn']))            $this->setVarByIdent($root, 'pv_dbg_hp_on', ((int)$v['hpOn']) === 1);
-        if (isset($v['rodOn']))           $this->setVarByIdent($root, 'pv_dbg_rod_on', ((int)$v['rodOn']) === 1);
+        if (isset($v['rodAutoMode'])) $this->setVarByIdent($cHeat, 'pv_rod_auto_mode', ((int)$v['rodAutoMode']) === 1);
+        if (isset($v['weeklyRodActive'])) $this->setVarByIdent($cHeat, 'pv_dbg_weekly_active', ((int)$v['weeklyRodActive']) === 1);
+        if (isset($v['hpOn']))            $this->setVarByIdent($cHeat, 'pv_dbg_hp_on', ((int)$v['hpOn']) === 1);
+        if (isset($v['rodOn']))           $this->setVarByIdent($cHeat, 'pv_dbg_rod_on', ((int)$v['rodOn']) === 1);
         if (isset($v['wbOn']))            $this->setVarByIdent($root, 'pv_dbg_wb_on', ((int)$v['wbOn']) === 1);
         if (isset($v['remainingW']))      $this->setVarByIdent($root, 'pv_dbg_remaining_kw', $this->wToKw((float)$v['remainingW']));
 
-        if (isset($v['hpRunning'])) $this->setVarByIdent($root, 'pv_dbg_hp_running', ((int)$v['hpRunning']) === 1);
-        if (isset($v['hpPowerW']))  $this->setVarByIdent($root, 'pv_dbg_hp_power_kw', $this->wToKw((float)$v['hpPowerW']));
+        if (isset($v['hpRunning'])) $this->setVarByIdent($cHeat, 'pv_dbg_hp_running', ((int)$v['hpRunning']) === 1);
+        if (isset($v['hpPowerW']))  $this->setVarByIdent($cHeat, 'pv_dbg_hp_power_kw', $this->wToKw((float)$v['hpPowerW']));
     }
 
     private function readPowerToW(array $src): float
@@ -1301,6 +1341,20 @@ class PVRegelung extends IPSModule
         $root = $this->ensureCategoryByIdent($this->InstanceID, 'pv_ui_root', (string)$this->ReadPropertyString('UIRootName'));
         $cWb = $this->ensureCategoryByIdent($root, 'pv_ui_wb', 'Wallbox');
         $this->setVarByIdent($cWb, $ident, $value);
+    }
+
+    private function setHeatingVarByIdent(string $ident, $value): void
+    {
+        $root = $this->ensureCategoryByIdent($this->InstanceID, 'pv_ui_root', (string)$this->ReadPropertyString('UIRootName'));
+        $cHeat = $this->ensureCategoryByIdent($root, 'pv_ui_heat', 'Heizung');
+        $this->setVarByIdent($cHeat, $ident, $value);
+    }
+
+    private function moveObjectByIdent(int $fromParentId, int $toParentId, string $ident): void
+    {
+        $id = @IPS_GetObjectIDByIdent($ident, $fromParentId);
+        if ($id === false) return;
+        IPS_SetParent((int)$id, $toParentId);
     }
 
     private function readVarByIdent(int $parentId, string $ident, $default)
