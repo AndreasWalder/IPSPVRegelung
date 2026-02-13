@@ -27,6 +27,8 @@ declare(strict_types=1);
  * 2026-02-13: v1.8 — export_deadband_w wirkt nur noch auf WP/Heizstab (Wallbox inkl. Phase läuft immer, außer bei Import-Limit)
  * 2026-02-13: v1.9 — UI: zusätzliche selbst erstellte Variable „Netz (gefiltert, invertiert)“ ergänzt
  * 2026-02-13: v1.10 — Fix Wallbox-Abschaltung: Bei dauerhaft zu wenig Überschuss wird nach Soft-Off-Delay sicher ausgeschaltet
+ * 2026-02-13: v1.11 — Hausverbrauch: Batterie-Leistung als signed Wert behandelt
+ *                  (Entladung wird addiert, Ladung wird abgezogen)
  */
 
 class PVRegelung extends IPSModule
@@ -294,12 +296,12 @@ class PVRegelung extends IPSModule
         $rodPctNow = ($rodPctVar > 0) ? (int)$this->readVar($rodPctVar, 0) : 0;
         $rodPowerW = ((float)$rodPctNow / 100.0) * (float)($CFG['heating_rod']['max_power_w'] ?? 0.0);
 
-        $battChargeW = 0.0;
+        $battPowerW = 0.0;
         if (isset($CFG['battery']['charge_power']) && is_array($CFG['battery']['charge_power'])) {
-            $battChargeW = max(0.0, $this->readPowerToW($CFG['battery']['charge_power']));
+            $battPowerW = $this->readPowerToW($CFG['battery']['charge_power']);
         }
 
-        $houseLoadW = max(0.0, $buildingLoadW - $wallboxChargeW - $hpPowerW - $rodPowerW - $battChargeW);
+        $houseLoadW = max(0.0, $buildingLoadW - $wallboxChargeW - $hpPowerW - $rodPowerW - $battPowerW);
 
         $this->updateUiVars($CFG, [
             'pv1W' => $pv1W,
