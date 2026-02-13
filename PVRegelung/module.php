@@ -27,7 +27,7 @@ declare(strict_types=1);
  * 2026-02-13: v1.8 — export_deadband_w wirkt nur noch auf WP/Heizstab (Wallbox inkl. Phase läuft immer, außer bei Import-Limit)
  */
 
-class PVREG_PVRegelung extends IPSModule
+class PVRegelung extends IPSModule
 {
     public function Create(): void
     {
