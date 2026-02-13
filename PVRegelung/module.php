@@ -45,6 +45,7 @@ declare(strict_types=1);
  * 2026-02-13: v1.21 — Härtung Action-Skript: Script-ID wird auf Existenz/Typ geprüft und bei Bedarf
  *                  neu erstellt, damit kein ungültiger CustomAction-Verweis gesetzt wird.
  * 2026-02-13: v1.22 — Manuelle Wallbox-Ladeleistung in kW (2.0–11.0) statt W; inkl. Migration alter W-Werte.
+ * 2026-02-13: v1.23 — Manuelle Ladeleistung ohne Nachkommastelle (2–11 kW) und sofortiges AUS bei Deaktivierung von "Manuell laden aktiv".
  */
 
 class PVRegelung extends IPSModule
@@ -181,7 +182,17 @@ class PVRegelung extends IPSModule
                 $this->runLoop();
                 break;
             case 'pv_manual_wb_enable':
-                $this->setManualVarByIdent('pv_manual_wb_enable', (bool)$Value);
+                $manualEnabled = (bool)$Value;
+                $this->setManualVarByIdent('pv_manual_wb_enable', $manualEnabled);
+                if (!$manualEnabled) {
+                    $CFG = $this->buildCfg();
+                    $state = $this->loadState();
+                    $state['wb_soft_on'] = false;
+                    $state['wb_soft_a'] = 0;
+                    $state['wb_deficit_since_ts'] = 0;
+                    $this->applyWallbox($CFG, $state, false, 0);
+                    $this->saveState($state);
+                }
                 $this->runLoop();
                 break;
             case 'pv_manual_wb_power_w':
@@ -940,7 +951,7 @@ class PVRegelung extends IPSModule
     {
         $this->ensureProfileFloat('PV_W', ' W', 0, 0.0, 0.0, 1.0);
         $this->ensureProfileFloat('PV_kW', ' kW', 2, 0.0, 0.0, 0.01);
-        $this->ensureProfileFloat('PV_kWI', ' kW', 1, 2.0, 11.0, 0.1);
+        $this->ensureProfileFloat('PV_kWI', ' kW', 0, 2.0, 11.0, 1.0);
         $this->ensureProfileFloat('PV_PCT', ' %', 0, 0.0, 100.0, 1.0);
         $this->ensureProfileInt('PV_A', ' A', 0, 0, 0, 1);
         $this->ensureProfileInt('PV_WI', ' W', 0, 0, 22000, 100);
@@ -1017,7 +1028,7 @@ class PVRegelung extends IPSModule
         if (isset($v['wallboxChargeW'])) $this->setVarByIdent($cWb, 'pv_wb_power_kw', $this->wToKw((float)$v['wallboxChargeW']));
         if (isset($v['wbA'])) $this->setVarByIdent($cWb, 'pv_wb_target_a', (int)$v['wbA']);
         if (isset($v['manualActive'])) $this->setVarByIdent($cWb, 'pv_manual_wb_enable', ((int)$v['manualActive']) === 1);
-        if (isset($v['manualPowerW'])) $this->setVarByIdent($cWb, 'pv_manual_wb_power_w', round(((float)$v['manualPowerW']) / 1000.0, 1));
+        if (isset($v['manualPowerW'])) $this->setVarByIdent($cWb, 'pv_manual_wb_power_w', round(((float)$v['manualPowerW']) / 1000.0));
         if (isset($v['manualTargetSoc'])) $this->setVarByIdent($cWb, 'pv_manual_wb_target_soc', (float)$v['manualTargetSoc']);
         if (isset($v['manualCarSoc'])) $this->setVarByIdent($cWb, 'pv_manual_wb_car_soc', (float)$v['manualCarSoc']);
 
@@ -1240,7 +1251,7 @@ class PVRegelung extends IPSModule
         if ($power > 50.0) {
             $power /= 1000.0;
         }
-        return max(2.0, min(11.0, $power));
+        return (float)round(max(2.0, min(11.0, $power)));
     }
 
     private function ensureManualWallboxDefaults(array $CFG): void
