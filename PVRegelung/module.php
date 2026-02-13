@@ -121,7 +121,7 @@ class PVRegelung extends IPSModule
 
         $this->RegisterPropertyString('UIRootName', 'PV Regelung');
 
-        $this->RegisterTimer('Loop', 0, 'PVREG_Loop($_IPS["TARGET"]);');
+        $this->RegisterTimer('Loop', 0, 'IPS_RequestAction($_IPS["TARGET"], "Loop", 0);');
     }
 
     public function ApplyChanges(): void
@@ -1075,9 +1075,4 @@ class PVRegelung extends IPSModule
         @RequestAction($varId, $v);
         @SetValue($varId, $v);
     }
-}
-
-function PVREG_Loop(int $InstanceID): void
-{
-    @IPS_RequestAction($InstanceID, 'Loop', 0);
 }
