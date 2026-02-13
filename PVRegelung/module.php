@@ -42,6 +42,8 @@ declare(strict_types=1);
  *                  Profil "PV_WI" mit sinnvollem Wertebereich für editierbare Eingabe in der Visu.
  * 2026-02-13: v1.20 — Fix Action-Binding: CustomAction wieder auf erzeugtes Action-Skript gesetzt,
  *                  damit keine "Skript existiert nicht"-Warnungen auftreten.
+ * 2026-02-13: v1.21 — Härtung Action-Skript: Script-ID wird auf Existenz/Typ geprüft und bei Bedarf
+ *                  neu erstellt, damit kein ungültiger CustomAction-Verweis gesetzt wird.
  */
 
 class PVRegelung extends IPSModule
@@ -1181,19 +1183,29 @@ class PVRegelung extends IPSModule
     private function ensureActionVariableByIdent(int $parentId, string $ident, string $name, int $type, string $profile): int
     {
         $id = $this->ensureVariableByIdent($parentId, $ident, $name, $type, $profile);
-        IPS_SetVariableCustomAction($id, $this->InstanceID);
+        $actionScriptId = $this->ensureActionScriptId();
+        if ($actionScriptId > 0) {
+            IPS_SetVariableCustomAction($id, $actionScriptId);
+        }
         return $id;
     }
 
     private function ensureActionScriptId(): int
     {
         $script = @IPS_GetObjectIDByIdent('pv_action_script', $this->InstanceID);
-        if ($script === false) {
+
+        $isValidScript = false;
+        if ($script !== false && @IPS_ObjectExists((int)$script)) {
+            $obj = IPS_GetObject((int)$script);
+            $isValidScript = ((int)($obj['ObjectType'] ?? -1) === 3);
+        }
+
+        if (!$isValidScript) {
             $script = IPS_CreateScript(0);
-            IPS_SetParent($script, $this->InstanceID);
-            IPS_SetIdent($script, 'pv_action_script');
-            IPS_SetName($script, 'PVRegelung Action');
-            IPS_SetHidden($script, true);
+            IPS_SetParent((int)$script, $this->InstanceID);
+            IPS_SetIdent((int)$script, 'pv_action_script');
+            IPS_SetName((int)$script, 'PVRegelung Action');
+            IPS_SetHidden((int)$script, true);
         }
 
         $content = "<?php
