@@ -487,9 +487,9 @@
                 {
                     "type": "NumberSpinner",
                     "name": "WallboxManualDefaultPowerW",
-                    "caption": "Default Ladeleistung manuell (W)",
-                    "minimum": 0,
-                    "maximum": 22000
+                    "caption": "Default Ladeleistung manuell (kW)",
+                    "minimum": 2,
+                    "maximum": 11
                 }
             ]
         },
