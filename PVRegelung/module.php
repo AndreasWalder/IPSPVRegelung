@@ -36,6 +36,8 @@ declare(strict_types=1);
  * 2026-02-13: v1.16 — Wallbox: manueller Lademodus (Bool + Ladeleistung + Ziel-SOC) bis Auto-SOC erreicht ist, unabhängig von PV-Überschuss.
  * 2026-02-13: v1.17 — UI/Bedienung: „Freigabe" in IPS anklickbar; deaktivierte Freigabe schaltet Wallbox-Überschussregelung aus.
  *                  Manuelle Ladeleistung und Ziel-SOC als interaktive IPS-Variablen (Action auf Instanz).
+ * 2026-02-13: v1.18 — Action-Skript für klickbare UI-Variablen erstellt/zugewiesen (IP-Symcon-konform).
+ *                  Bei Freigabe EIN wird Sperrzeit zurückgesetzt und Regelung sofort neu ausgewertet.
  */
 
 class PVRegelung extends IPSModule
@@ -166,16 +168,22 @@ class PVRegelung extends IPSModule
                 $this->setManualVarByIdent('pv_wb_enabled', $enabled);
                 if (!$enabled) {
                     $this->setManualVarByIdent('pv_manual_wb_enable', false);
+                } else {
+                    $this->resetWallboxReleaseBlockers();
                 }
+                $this->runLoop();
                 break;
             case 'pv_manual_wb_enable':
                 $this->setManualVarByIdent('pv_manual_wb_enable', (bool)$Value);
+                $this->runLoop();
                 break;
             case 'pv_manual_wb_power_w':
                 $this->setManualVarByIdent('pv_manual_wb_power_w', max(0, (int)$Value));
+                $this->runLoop();
                 break;
             case 'pv_manual_wb_target_soc':
                 $this->setManualVarByIdent('pv_manual_wb_target_soc', max(0.0, min(100.0, (float)$Value)));
+                $this->runLoop();
                 break;
             default:
                 throw new Exception('Invalid Ident: ' . (string)$Ident);
@@ -1105,6 +1113,17 @@ class PVRegelung extends IPSModule
         $this->SetBuffer('PV_STATE_JSON', json_encode($state, JSON_UNESCAPED_UNICODE));
     }
 
+
+    private function resetWallboxReleaseBlockers(): void
+    {
+        $state = $this->loadState();
+        $state['wb_last_off_ts'] = 0;
+        $state['wb_deficit_since_ts'] = 0;
+        $state['wb_soft_on'] = false;
+        $state['wb_soft_a'] = 0;
+        $this->saveState($state);
+    }
+
     private function readVar(int $varId, $default)
     {
         if ($varId <= 0) return $default;
@@ -1158,8 +1177,33 @@ class PVRegelung extends IPSModule
     private function ensureActionVariableByIdent(int $parentId, string $ident, string $name, int $type, string $profile): int
     {
         $id = $this->ensureVariableByIdent($parentId, $ident, $name, $type, $profile);
-        IPS_SetVariableCustomAction($id, $this->InstanceID);
+        IPS_SetVariableCustomAction($id, $this->ensureActionScriptId());
         return $id;
+    }
+
+    private function ensureActionScriptId(): int
+    {
+        $script = @IPS_GetObjectIDByIdent('pv_action_script', $this->InstanceID);
+        if ($script === false) {
+            $script = IPS_CreateScript(0);
+            IPS_SetParent($script, $this->InstanceID);
+            IPS_SetIdent($script, 'pv_action_script');
+            IPS_SetName($script, 'PVRegelung Action');
+            IPS_SetHidden($script, true);
+        }
+
+        $content = "<?php\n"
+            . "\$variableId = (int)\$_IPS['VARIABLE'];\n"
+            . "\$value = \$_IPS['VALUE'];\n"
+            . "\$object = IPS_GetObject(\$variableId);\n"
+            . "\$ident = (string)(\$object['ObjectIdent'] ?? '');\n"
+            . "if (\$ident === '') {\n"
+            . "    return;\n"
+            . "}\n"
+            . 'IPS_RequestAction(' . $this->InstanceID . ", \$ident, \$value);\n";
+
+        IPS_SetScriptContent((int)$script, $content);
+        return (int)$script;
     }
 
     private function ensureManualWallboxDefaults(array $CFG): void
