@@ -865,7 +865,9 @@ class PVRegelung extends IPSModule
 
     private function applyHeatingRod(array $CFG, array &$state, bool $on): void
     {
-        $vars = array_values(array_filter((array)($CFG['heating_rod']['switch_vars'] ?? []), static fn ($id) => (int)$id > 0));
+        $vars = array_values(array_filter((array)($CFG['heating_rod']['switch_vars'] ?? []), function ($id) {
+            return (int)$id > 0;
+        }));
         if (count($vars) === 0) return;
 
         $now = time();
@@ -888,6 +890,36 @@ class PVRegelung extends IPSModule
         if ($on && $isOn) {
             foreach ($vars as $varId) $this->safeSetBool((int)$varId, true);
         }
+    }
+
+    private function heatingRodTotalPowerW(array $CFG): float
+    {
+        $vars = array_values(array_filter((array)($CFG['heating_rod']['switch_vars'] ?? []), function ($id) {
+            return (int)$id > 0;
+        }));
+        $count = count($vars);
+        if ($count <= 0) return 0.0;
+        return max(0.0, (float)($CFG['heating_rod']['power_per_unit_w'] ?? 0.0)) * $count;
+    }
+
+    private function readHeatingRodAutoMode(array $CFG): bool
+    {
+        $root = $this->ensureCategoryByIdent($this->InstanceID, 'pv_ui_root', (string)($CFG['ui']['root_name'] ?? 'PV Regelung'));
+        $cHeat = $this->ensureCategoryByIdent($root, 'pv_ui_heat', 'Heizung');
+        return (bool)$this->readVarByIdent($cHeat, 'pv_rod_auto_mode', true);
+    }
+
+    private function readBoilerRodTargetC(array $CFG): float
+    {
+        $default = (float)($CFG['boiler']['rod_target_c'] ?? 60.0);
+        $varId = (int)($CFG['boiler']['rod_target_var'] ?? 0);
+        if ($varId > 0) {
+            return max(0.0, min(90.0, (float)$this->readVar($varId, $default)));
+        }
+
+        $root = $this->ensureCategoryByIdent($this->InstanceID, 'pv_ui_root', (string)($CFG['ui']['root_name'] ?? 'PV Regelung'));
+        $cHeat = $this->ensureCategoryByIdent($root, 'pv_ui_heat', 'Heizung');
+        return max(0.0, min(90.0, (float)$this->readVarByIdent($cHeat, 'pv_boiler_target_c', $default)));
     }
 
     private function heatingRodTotalPowerW(array $CFG): float
@@ -990,6 +1022,9 @@ class PVRegelung extends IPSModule
         $this->ensureVariableByIdent($cLoad, 'pv_house_load_kw', 'Hausverbrauch (ohne WB/WP/Heizstab/Batt)', 2, 'PV_kW');
         $this->ensureVariableByIdent($cLoad, 'pv_boiler_temp', 'Boiler Temperatur', 2, '~Temperature');
         $this->ensureActionVariableByIdent($cLoad, 'pv_boiler_target_c', 'Boiler Solltemperatur', 2, '~Temperature');
+
+        $this->moveObjectByIdent($cLoad, $cHeat, 'pv_boiler_target_c');
+        $this->ensureActionVariableByIdent($cHeat, 'pv_boiler_target_c', 'Boiler Solltemperatur', 2, '~Temperature');
 
         $this->moveObjectByIdent($cLoad, $cHeat, 'pv_boiler_target_c');
         $this->ensureActionVariableByIdent($cHeat, 'pv_boiler_target_c', 'Boiler Solltemperatur', 2, '~Temperature');
