@@ -470,6 +470,26 @@
                     "caption": "Soft-Off Grace (s)",
                     "minimum": 0,
                     "maximum": 3600
+                },
+                {
+                    "type": "SelectVariable",
+                    "name": "WallboxManualCarSocVarID",
+                    "caption": "Auto SOC (Ist) für manuelles Laden"
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "WallboxManualDefaultTargetSoc",
+                    "caption": "Default Ziel-SOC manuell (%)",
+                    "digits": 1,
+                    "minimum": 0,
+                    "maximum": 100
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "WallboxManualDefaultPowerW",
+                    "caption": "Default Ladeleistung manuell (W)",
+                    "minimum": 0,
+                    "maximum": 22000
                 }
             ]
         },
