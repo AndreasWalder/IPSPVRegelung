@@ -342,11 +342,6 @@
                 },
                 {
                     "type": "SelectVariable",
-                    "name": "WallboxEnableVarID",
-                    "caption": "Freigabe Bool"
-                },
-                {
-                    "type": "SelectVariable",
                     "name": "WallboxChargePowerVarID",
                     "caption": "Leistung Ist"
                 },
