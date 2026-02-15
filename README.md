@@ -109,9 +109,13 @@ Zusätzlich können Sie den Loop manuell starten oder den internen Zustand zurü
 - **HeatpumpPowerInVarID** (int), **HeatpumpPowerInUnit**
   - Gemessene WP-Leistungsaufnahme.
 - **HeatpumpSurplusOutVarID** (int), **HeatpumpSurplusOutUnit**
-  - Ausgangssignal für WP-Überschuss/Freigabe (je nach Anlagenlogik).
+  - Ausgangssignal für **aktuellen PV-Überschuss** der WP (Export aus Netzsicht).
+  - Bei `HeatpumpSurplusOutSigned=false`: nur positiver Überschuss (unterhalb Deadband = 0).
 - **HeatpumpSurplusOutSigned** (bool)
-  - Definiert, ob das Ausgangssignal vorzeichenbehaftet geschrieben wird.
+  - `false`: reiner Überschusswert (>= 0).
+  - `true`: vorzeichenbehafteter Grid-Wert (Import positiv / Export negativ).
+- **HeatpumpPvProductionOutVarID** (int), **HeatpumpPvProductionOutUnit**
+  - Optionales Ausgangssignal für **aktuelle PV-Produktion gesamt** (PV1 + PV2).
 
 - **HeatpumpTempHysteresisC** (float, °C)
   - Hysterese um Temperaturziel, verhindert Ein/Aus-Flattern.

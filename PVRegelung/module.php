@@ -101,6 +101,8 @@ class PVRegelung extends IPSModule
         $this->RegisterPropertyInteger('HeatpumpSurplusOutVarID', 17999);
         $this->RegisterPropertyString('HeatpumpSurplusOutUnit', 'kW');
         $this->RegisterPropertyBoolean('HeatpumpSurplusOutSigned', false);
+        $this->RegisterPropertyInteger('HeatpumpPvProductionOutVarID', 0);
+        $this->RegisterPropertyString('HeatpumpPvProductionOutUnit', 'kW');
 
         $this->RegisterPropertyFloat('HeatpumpTempHysteresisC', 0.5);
         $this->RegisterPropertyInteger('HeatpumpMinSurplusW', 800);
@@ -279,6 +281,8 @@ class PVRegelung extends IPSModule
                 'surplus_out_var' => (int)$this->ReadPropertyInteger('HeatpumpSurplusOutVarID'),
                 'surplus_out_unit' => (string)$this->ReadPropertyString('HeatpumpSurplusOutUnit'),
                 'surplus_out_signed' => (bool)$this->ReadPropertyBoolean('HeatpumpSurplusOutSigned'),
+                'pv_production_out_var' => (int)$this->ReadPropertyInteger('HeatpumpPvProductionOutVarID'),
+                'pv_production_out_unit' => (string)$this->ReadPropertyString('HeatpumpPvProductionOutUnit'),
                 'temp_hysteresis_c' => (float)$this->ReadPropertyFloat('HeatpumpTempHysteresisC'),
                 'min_surplus_w' => (int)$this->ReadPropertyInteger('HeatpumpMinSurplusW'),
                 'min_on_seconds' => (int)$this->ReadPropertyInteger('HeatpumpMinOnSeconds'),
@@ -370,6 +374,7 @@ class PVRegelung extends IPSModule
         $hpPowerW  = $this->readPowerToW($CFG['heatpump']['power_in']);
 
         $this->writeHeatpumpSurplusSignal($CFG, $gridW, $exportW, $importW);
+        $this->writeHeatpumpPvProductionSignal($CFG, $pvTotalW);
 
         $rodPowerW = $this->heatingRodPowerForStageW($CFG, (int)($state['rod_stage'] ?? 0));
 
@@ -1537,6 +1542,20 @@ class PVRegelung extends IPSModule
             $this->safeSetFloat($outId, $valueW / 1000.0);
         } else {
             $this->safeSetFloat($outId, $valueW);
+        }
+    }
+
+    private function writeHeatpumpPvProductionSignal(array $CFG, float $pvTotalW): void
+    {
+        $outId = (int)($CFG['heatpump']['pv_production_out_var'] ?? 0);
+        if ($outId <= 0) return;
+
+        $unit = (string)($CFG['heatpump']['pv_production_out_unit'] ?? 'kW');
+
+        if ($unit === 'kW' || $unit === 'kw') {
+            $this->safeSetFloat($outId, $pvTotalW / 1000.0);
+        } else {
+            $this->safeSetFloat($outId, $pvTotalW);
         }
     }
 

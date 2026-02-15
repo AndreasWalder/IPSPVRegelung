@@ -211,6 +211,26 @@
                     "caption": "Überschuss-Output mit Vorzeichen (GridW)"
                 },
                 {
+                    "type": "SelectVariable",
+                    "name": "HeatpumpPvProductionOutVarID",
+                    "caption": "WP PV-Produktion-Output (Float)"
+                },
+                {
+                    "type": "Select",
+                    "name": "HeatpumpPvProductionOutUnit",
+                    "caption": "Einheit PV-Produktion-Output",
+                    "options": [
+                        {
+                            "label": "kW",
+                            "value": "kW"
+                        },
+                        {
+                            "label": "W",
+                            "value": "W"
+                        }
+                    ]
+                },
+                {
                     "type": "NumberSpinner",
                     "name": "HeatpumpTempHysteresisC",
                     "caption": "Temp-Hysterese (°C)",
