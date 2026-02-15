@@ -446,6 +446,20 @@
                 },
                 {
                     "type": "NumberSpinner",
+                    "name": "WallboxAutoStartMinSurplusW",
+                    "caption": "Auto-Start ab Überschuss (W)",
+                    "minimum": 0,
+                    "maximum": 20000
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "WallboxAutoStartMinDurationSeconds",
+                    "caption": "Auto-Start Mindestdauer Überschuss (s)",
+                    "minimum": 0,
+                    "maximum": 7200
+                },
+                {
+                    "type": "NumberSpinner",
                     "name": "WallboxRampUpA",
                     "caption": "Rampen +A pro Loop",
                     "minimum": 1,

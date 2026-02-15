@@ -53,6 +53,8 @@ declare(strict_types=1);
  *                  im UI; Konfigurationsfelder „Heizstab Zieltemperatur“ und externe Soll-Var-ID entfernt.
  * 2026-02-13: v1.27 — Heizstab stufig (1/2/3), manuelle Sofortsteuerung (EIN/AUS) und Wochenlogik
  *                  auf „Tage seit letzter Solltemperatur-Erreichung“ umgestellt.
+ * 2026-02-15: v1.28 — Wallbox-Automatik startet nur noch bei anhaltendem PV-Überschuss
+ *                  (Startschwelle + Mindestdauer konfigurierbar, Standard 2 kW / 15 min).
  */
 
 class PVRegelung extends IPSModule
@@ -142,6 +144,8 @@ class PVRegelung extends IPSModule
         $this->RegisterPropertyInteger('WallboxMinOnSeconds', 180);
         $this->RegisterPropertyInteger('WallboxMinOffSeconds', 120);
         $this->RegisterPropertyInteger('WallboxReserveW', 200);
+        $this->RegisterPropertyInteger('WallboxAutoStartMinSurplusW', 2000);
+        $this->RegisterPropertyInteger('WallboxAutoStartMinDurationSeconds', 900);
 
         $this->RegisterPropertyInteger('WallboxRampUpA', 1);
         $this->RegisterPropertyInteger('WallboxRampDownA', 1);
@@ -318,6 +322,8 @@ class PVRegelung extends IPSModule
                 'min_on_seconds' => (int)$this->ReadPropertyInteger('WallboxMinOnSeconds'),
                 'min_off_seconds' => (int)$this->ReadPropertyInteger('WallboxMinOffSeconds'),
                 'reserve_w' => (int)$this->ReadPropertyInteger('WallboxReserveW'),
+                'auto_start_min_surplus_w' => (int)$this->ReadPropertyInteger('WallboxAutoStartMinSurplusW'),
+                'auto_start_min_duration_seconds' => (int)$this->ReadPropertyInteger('WallboxAutoStartMinDurationSeconds'),
                 'ramp_up_a_per_loop' => (int)$this->ReadPropertyInteger('WallboxRampUpA'),
                 'ramp_down_a_per_loop' => (int)$this->ReadPropertyInteger('WallboxRampDownA'),
                 'soft_off_grace_seconds' => (int)$this->ReadPropertyInteger('WallboxSoftOffGraceSeconds'),
@@ -666,10 +672,35 @@ class PVRegelung extends IPSModule
         $canTurnOn  = (!$isOn) && (($now - $lastOff) >= (int)($CFG['wallbox']['min_off_seconds'] ?? 120));
         $canTurnOff = ($isOn)  && (($now - $lastOn)  >= (int)($CFG['wallbox']['min_on_seconds'] ?? 180));
 
+        $autoStartMinSurplusW = max(0.0, (float)($CFG['wallbox']['auto_start_min_surplus_w'] ?? 2000.0));
+        $autoStartMinDurationS = max(0, (int)($CFG['wallbox']['auto_start_min_duration_seconds'] ?? 900));
+
+        if (!$isOn) {
+            if ($availableForPhaseDecisionW >= $autoStartMinSurplusW) {
+                if (((int)($state['wb_start_surplus_since_ts'] ?? 0)) <= 0) {
+                    $state['wb_start_surplus_since_ts'] = $now;
+                }
+            } else {
+                $state['wb_start_surplus_since_ts'] = 0;
+            }
+        } else {
+            $state['wb_start_surplus_since_ts'] = 0;
+        }
+
         $curA = (int)$this->readVar($setA, 0);
         if (!$isOn) $curA = 0;
 
         if ($targetA >= $minA) {
+            if (!$isOn) {
+                $surplusSince = (int)($state['wb_start_surplus_since_ts'] ?? 0);
+                $surplusDurationReached = $autoStartMinDurationS <= 0
+                    || ($surplusSince > 0 && (($now - $surplusSince) >= $autoStartMinDurationS));
+
+                if (!$surplusDurationReached) {
+                    return [false, 0, $state];
+                }
+            }
+
             if (!$isOn && !$canTurnOn) return [false, 0, $state];
 
             $desiredA = max($minA, $targetA);
