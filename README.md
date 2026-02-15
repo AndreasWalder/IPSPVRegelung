@@ -192,6 +192,10 @@ Zusätzlich können Sie den Loop manuell starten oder den internen Zustand zurü
   - Mindest-AUS-Zeit.
 - **WallboxReserveW** (int, W)
   - Reserveleistung, die nicht vollständig verplant wird.
+- **WallboxAutoStartMinSurplusW** (int, W)
+  - Mindest-Überschuss für den automatischen Start der Wallbox (Standard: 2000 W).
+- **WallboxAutoStartMinDurationSeconds** (int, s)
+  - Mindestdauer, die der Start-Überschuss anliegen muss, bevor Auto-Start freigegeben wird (Standard: 900 s).
 - **WallboxRampUpA** (int, A/Loop)
   - Wie schnell der Strom nach oben gefahren wird.
 - **WallboxRampDownA** (int, A/Loop)
@@ -267,4 +271,3 @@ Wesentliche Planungs-/Ausgabefunktionen:
 4. **Wallbox sicher einregeln**:
    - `WallboxMinA/MaxA`, Phase-Schwellen und Soft-Off gemeinsam testen.
 5. **Weekly-Heizstab nur nutzen, wenn hydraulisch/elektrisch gewünscht**.
-
