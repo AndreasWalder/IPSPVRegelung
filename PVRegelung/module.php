@@ -367,7 +367,13 @@ class PVRegelung extends IPSModule
         $pv2W = $this->readPowerToW($CFG['power']['pv2']);
         $pvTotalW = max(0.0, $pv1W + $pv2W);
 
-        $buildingLoadW = max(0.0, $pvTotalW + $gridW);
+        $battPowerW = 0.0;
+        if (isset($CFG['battery']['charge_power']) && is_array($CFG['battery']['charge_power'])) {
+            $battPowerW = $this->readPowerToW($CFG['battery']['charge_power']);
+        }
+
+        $battDischargeForHouseW = max(0.0, -$battPowerW);
+        $buildingLoadW = max(0.0, $pvTotalW + $gridW + $battDischargeForHouseW);
 
         $wallboxChargeW = $this->readPowerToW($CFG['wallbox']['charge_power']);
 
@@ -381,11 +387,6 @@ class PVRegelung extends IPSModule
         $this->writeHeatpumpPvProductionSignal($CFG, $pvTotalW);
 
         $rodPowerW = $this->heatingRodPowerForStageW($CFG, (int)($state['rod_stage'] ?? 0));
-
-        $battPowerW = 0.0;
-        if (isset($CFG['battery']['charge_power']) && is_array($CFG['battery']['charge_power'])) {
-            $battPowerW = $this->readPowerToW($CFG['battery']['charge_power']);
-        }
 
         $hpPowerForHouseW = $hpRunning ? $hpPowerW : 0.0;
         $battChargeForHouseW = max(0.0, $battPowerW);
