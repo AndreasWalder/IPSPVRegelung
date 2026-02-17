@@ -55,6 +55,8 @@ declare(strict_types=1);
  *                  auf „Tage seit letzter Solltemperatur-Erreichung“ umgestellt.
  * 2026-02-15: v1.28 — Wallbox-Automatik startet nur noch bei anhaltendem PV-Überschuss
  *                  (Startschwelle + Mindestdauer konfigurierbar, Standard 2 kW / 15 min).
+ * 2026-02-17: v1.29 — Hausverbrauch: Batterieladung (positiver Leistungswert) wird vom Hausverbrauch
+ *                  abgezogen, Batterieentladung (negativer Leistungswert) addiert.
  */
 
 class PVRegelung extends IPSModule
@@ -384,8 +386,9 @@ class PVRegelung extends IPSModule
         }
 
         $hpPowerForHouseW = $hpRunning ? $hpPowerW : 0.0;
-        $battDischargeForHouseW = ($battPowerW < 0.0) ? $battPowerW : 0.0;
-        $houseLoadW = max(0.0,$buildingLoadW - $wallboxChargeW - $hpPowerForHouseW - $rodPowerW + max(0.0, -$battPowerW));
+        $battChargeForHouseW = max(0.0, $battPowerW);
+        $battDischargeForHouseW = max(0.0, -$battPowerW);
+        $houseLoadW = max(0.0, $buildingLoadW - $wallboxChargeW - $hpPowerForHouseW - $rodPowerW - $battChargeForHouseW + $battDischargeForHouseW);
         $weeklyDaysSinceTarget = $this->readHeatingRodDaysSinceTargetReached($CFG);
         $this->updateUiVars($CFG, [
             'pv1W' => $pv1W,
