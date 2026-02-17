@@ -59,6 +59,7 @@ declare(strict_types=1);
  *                  abgezogen, Batterieentladung (negativer Leistungswert) addiert.
  * 2026-02-17: v1.30 — Korrektur Hausverbrauch: Rücknahme der Gebäudelast-Anpassung auf Batterie-Entladung.
  *                  Heizstab wird im Hausverbrauch wieder mitgezählt.
+ * 2026-02-17: v1.31 — Hausverbrauch (ohne WB/WP/Batt): Batterie-Entladung wird nicht mehr doppelt addiert.
  */
 
 class PVRegelung extends IPSModule
@@ -391,7 +392,7 @@ class PVRegelung extends IPSModule
         $hpPowerForHouseW = $hpRunning ? $hpPowerW : 0.0;
         $battChargeForHouseW = max(0.0, $battPowerW);
         $battDischargeForHouseW = max(0.0, -$battPowerW);
-        $houseLoadW = max(0.0, $buildingLoadW - $wallboxChargeW - $hpPowerForHouseW - $battChargeForHouseW + $battDischargeForHouseW);
+        $houseLoadW = max(0.0, $buildingLoadW - $wallboxChargeW - $hpPowerForHouseW - $battChargeForHouseW);
         $weeklyDaysSinceTarget = $this->readHeatingRodDaysSinceTargetReached($CFG);
         $this->updateUiVars($CFG, [
             'pv1W' => $pv1W,
