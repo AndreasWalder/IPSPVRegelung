@@ -473,6 +473,7 @@ class PVRegelung extends IPSModule
         $rodOn = false;
         $wbOn = false;
         $wbA = 0;
+        $rodDaysSinceTargetActual = $this->daysSinceLastTargetReached($state);
 
         if ($exportW < $deadband && !$rodManualOn) {
             [$wbOn, $wbA, $state] = $this->planWallboxRamped($CFG, $state, $remainingW);
@@ -493,6 +494,7 @@ class PVRegelung extends IPSModule
                 'wbA' => $wbA,
                 'remainingW' => $remainingW,
                 'weeklyRodActive' => 0,
+                'rodDaysSinceTargetActual' => $rodDaysSinceTargetActual,
                 'restSurplusW' => $restSurplusW,
                 'manualActive' => 0,
             ]);
@@ -549,6 +551,7 @@ class PVRegelung extends IPSModule
             'wbA' => $wbA,
             'remainingW' => $remainingW,
             'weeklyRodActive' => $needWeeklyRod ? 1 : 0,
+            'rodDaysSinceTargetActual' => $rodDaysSinceTargetActual,
             'restSurplusW' => $restSurplusW,
             'manualActive' => 0,
             'manualRodOn' => $rodManualOn ? 1 : 0,
@@ -1108,6 +1111,7 @@ class PVRegelung extends IPSModule
         $this->moveObjectByIdent($root, $cHeat, 'pv_rod_auto_mode');
         $this->moveObjectByIdent($root, $cHeat, 'pv_manual_rod_on');
         $this->moveObjectByIdent($root, $cHeat, 'pv_rod_days_since_target');
+        $this->moveObjectByIdent($root, $cHeat, 'pv_dbg_rod_days_since_target_actual');
         $this->moveObjectByIdent($root, $cHeat, 'pv_dbg_weekly_active');
         $this->moveObjectByIdent($root, $cHeat, 'pv_dbg_hp_on');
         $this->moveObjectByIdent($root, $cHeat, 'pv_dbg_rod_on');
@@ -1126,6 +1130,7 @@ class PVRegelung extends IPSModule
         if (!$hadDaysVar) {
             SetValue((int)$daysId, max(1, min(20, (int)$CFG['heating_rod']['weekly']['days_after_target_reached'])));
         }
+        $this->ensureVariableByIdent($cHeat, 'pv_dbg_rod_days_since_target_actual', 'Vergangene Tage seit letzter Solltemperatur', 2, '~Float');
         $this->ensureVariableByIdent($cHeat, 'pv_dbg_weekly_active', 'Weekly Heizstab aktiv', 0, '~Switch');
         $this->ensureVariableByIdent($cHeat, 'pv_dbg_hp_on', 'Wärmepumpe an', 0, '~Switch');
         $this->ensureVariableByIdent($cHeat, 'pv_dbg_rod_on', 'Heizstab aktiv', 0, '~Switch');
@@ -1167,6 +1172,7 @@ class PVRegelung extends IPSModule
         if (isset($v['boilerTemp']))    $this->setVarByIdent($cLoad, 'pv_boiler_temp', (float)$v['boilerTemp']);
         if (isset($v['boilerTargetC'])) $this->setVarByIdent($cHeat, 'pv_boiler_target_c', (float)$v['boilerTargetC']);
         if (isset($v['rodDaysSinceTarget'])) $this->setVarByIdent($cHeat, 'pv_rod_days_since_target', max(1, min(20, (int)$v['rodDaysSinceTarget'])));
+        if (isset($v['rodDaysSinceTargetActual'])) $this->setVarByIdent($cHeat, 'pv_dbg_rod_days_since_target_actual', max(0.0, (float)$v['rodDaysSinceTargetActual']));
 
         if (isset($v['wallboxChargeW'])) $this->setVarByIdent($cWb, 'pv_wb_power_kw', $this->wToKw((float)$v['wallboxChargeW']));
         if (isset($v['wbA'])) $this->setVarByIdent($cWb, 'pv_wb_target_a', (int)$v['wbA']);
@@ -1233,11 +1239,8 @@ class PVRegelung extends IPSModule
         $end   = (string)($weeklyCfg['end_hhmm'] ?? '16:00');
 
         $now = time();
-        $lastReached = (int)($state['rod_last_target_reached_ts'] ?? 0);
-        if ($lastReached > 0) {
-            $elapsedDays = ($now - $lastReached) / 86400.0;
-            if ($elapsedDays < $days) return false;
-        }
+        $elapsedDays = $this->daysSinceLastTargetReached($state);
+        if ($elapsedDays < $days) return false;
 
         $mins = ((int)date('H', $now) * 60) + (int)date('i', $now);
 
@@ -1249,6 +1252,16 @@ class PVRegelung extends IPSModule
 
         if ($endM <= $startM) return ($mins >= $startM) || ($mins <= $endM);
         return ($mins >= $startM) && ($mins <= $endM);
+    }
+
+    private function daysSinceLastTargetReached(array $state): float
+    {
+        $lastReached = (int)($state['rod_last_target_reached_ts'] ?? 0);
+        if ($lastReached <= 0) {
+            return 9999.0;
+        }
+
+        return max(0.0, (time() - $lastReached) / 86400.0);
     }
 
     private function maxHeatingRodStage(array $CFG): int
