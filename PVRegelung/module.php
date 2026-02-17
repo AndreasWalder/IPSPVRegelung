@@ -20,7 +20,7 @@ declare(strict_types=1);
  *                   Gebäude Verbrauch, Wallbox, Batterieladezustand
  *                 • Profile werden automatisch angelegt
  * 2026-02-13: v1.3 — Fix: Profilnamen ohne Sonderzeichen (PV_W / PV_kW / PV_PCT / PV_A)
- * 2026-02-13: v1.4 — Visualisierung: Hausverbrauch (ohne WB/WP/Heizstab/Batt) + Wallbox-Regelung nutzt Überschuss vor WB (Export + WB Ist)
+ * 2026-02-13: v1.4 — Visualisierung: Hausverbrauch (ohne WB/WP/Batt) + Wallbox-Regelung nutzt Überschuss vor WB (Export + WB Ist)
  * 2026-02-13: v1.5 — Rest-Überschuss (Soll ~0) nach allen Verbrauchern + Wallbox Rampenregelung (sanft rauf/runter, Soft-Off bei Wolke)
  * 2026-02-13: v1.6 — Wallbox Phasen-Umschaltung 1P/3P per Bool-Var (true=1P, false=3P) mit Hysterese + Mindesthaltezeit
  * 2026-02-13: v1.7 — Zusatz-Output: Netz (gefiltert) invertiert (Vorzeichen umdrehen)
@@ -57,8 +57,8 @@ declare(strict_types=1);
  *                  (Startschwelle + Mindestdauer konfigurierbar, Standard 2 kW / 15 min).
  * 2026-02-17: v1.29 — Hausverbrauch: Batterieladung (positiver Leistungswert) wird vom Hausverbrauch
  *                  abgezogen, Batterieentladung (negativer Leistungswert) addiert.
- * 2026-02-17: v1.30 — Gebäudelast berücksichtigt Batterie-Entladung direkt (bei 0 PV/Netz entspricht
- *                  die Gebäudelast der Batterieleistung); Hausverbrauch ohne Batt bleibt bereinigt.
+ * 2026-02-17: v1.30 — Korrektur Hausverbrauch: Rücknahme der Gebäudelast-Anpassung auf Batterie-Entladung.
+ *                  Heizstab wird im Hausverbrauch wieder mitgezählt.
  */
 
 class PVRegelung extends IPSModule
@@ -390,7 +390,8 @@ class PVRegelung extends IPSModule
 
         $hpPowerForHouseW = $hpRunning ? $hpPowerW : 0.0;
         $battChargeForHouseW = max(0.0, $battPowerW);
-        $houseLoadW = max(0.0, $buildingLoadW - $wallboxChargeW - $hpPowerForHouseW - $rodPowerW - $battChargeForHouseW - $battDischargeForHouseW);
+        $battDischargeForHouseW = max(0.0, -$battPowerW);
+        $houseLoadW = max(0.0, $buildingLoadW - $wallboxChargeW - $hpPowerForHouseW - $battChargeForHouseW + $battDischargeForHouseW);
         $weeklyDaysSinceTarget = $this->readHeatingRodDaysSinceTargetReached($CFG);
         $this->updateUiVars($CFG, [
             'pv1W' => $pv1W,
@@ -1095,7 +1096,7 @@ class PVRegelung extends IPSModule
         $this->ensureVariableByIdent($cSurp, 'pv_rest_kw', 'Rest-Überschuss (Soll ~0)', 2, 'PV_kW');
 
         $this->ensureVariableByIdent($cLoad, 'pv_load_kw', 'Gebäudelast', 2, 'PV_kW');
-        $this->ensureVariableByIdent($cLoad, 'pv_house_load_kw', 'Hausverbrauch (ohne WB/WP/Heizstab/Batt)', 2, 'PV_kW');
+        $this->ensureVariableByIdent($cLoad, 'pv_house_load_kw', 'Hausverbrauch (ohne WB/WP/Batt)', 2, 'PV_kW');
         $this->ensureVariableByIdent($cLoad, 'pv_boiler_temp', 'Boiler Temperatur', 2, '~Temperature');
         $this->ensureActionVariableByIdent($cHeat, 'pv_boiler_target_c', 'Boiler Solltemperatur', 2, '~Temperature');
 
