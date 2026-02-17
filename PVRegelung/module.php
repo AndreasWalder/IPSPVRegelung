@@ -57,6 +57,8 @@ declare(strict_types=1);
  *                  (Startschwelle + Mindestdauer konfigurierbar, Standard 2 kW / 15 min).
  * 2026-02-17: v1.29 — Hausverbrauch: Batterieladung (positiver Leistungswert) wird vom Hausverbrauch
  *                  abgezogen, Batterieentladung (negativer Leistungswert) addiert.
+ * 2026-02-17: v1.30 — Gebäudelast berücksichtigt Batterie-Entladung direkt (bei 0 PV/Netz entspricht
+ *                  die Gebäudelast der Batterieleistung); Hausverbrauch ohne Batt bleibt bereinigt.
  */
 
 class PVRegelung extends IPSModule
@@ -365,7 +367,13 @@ class PVRegelung extends IPSModule
         $pv2W = $this->readPowerToW($CFG['power']['pv2']);
         $pvTotalW = max(0.0, $pv1W + $pv2W);
 
-        $buildingLoadW = max(0.0, $pvTotalW + $gridW);
+        $battPowerW = 0.0;
+        if (isset($CFG['battery']['charge_power']) && is_array($CFG['battery']['charge_power'])) {
+            $battPowerW = $this->readPowerToW($CFG['battery']['charge_power']);
+        }
+
+        $battDischargeForHouseW = max(0.0, -$battPowerW);
+        $buildingLoadW = max(0.0, $pvTotalW + $gridW + $battDischargeForHouseW);
 
         $wallboxChargeW = $this->readPowerToW($CFG['wallbox']['charge_power']);
 
@@ -380,15 +388,9 @@ class PVRegelung extends IPSModule
 
         $rodPowerW = $this->heatingRodPowerForStageW($CFG, (int)($state['rod_stage'] ?? 0));
 
-        $battPowerW = 0.0;
-        if (isset($CFG['battery']['charge_power']) && is_array($CFG['battery']['charge_power'])) {
-            $battPowerW = $this->readPowerToW($CFG['battery']['charge_power']);
-        }
-
         $hpPowerForHouseW = $hpRunning ? $hpPowerW : 0.0;
         $battChargeForHouseW = max(0.0, $battPowerW);
-        $battDischargeForHouseW = max(0.0, -$battPowerW);
-        $houseLoadW = max(0.0, $buildingLoadW - $wallboxChargeW - $hpPowerForHouseW - $rodPowerW - $battChargeForHouseW + $battDischargeForHouseW);
+        $houseLoadW = max(0.0, $buildingLoadW - $wallboxChargeW - $hpPowerForHouseW - $rodPowerW - $battChargeForHouseW - $battDischargeForHouseW);
         $weeklyDaysSinceTarget = $this->readHeatingRodDaysSinceTargetReached($CFG);
         $this->updateUiVars($CFG, [
             'pv1W' => $pv1W,
