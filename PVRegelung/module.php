@@ -60,6 +60,8 @@ declare(strict_types=1);
  * 2026-02-17: v1.30 — Korrektur Hausverbrauch: Rücknahme der Gebäudelast-Anpassung auf Batterie-Entladung.
  *                  Heizstab wird im Hausverbrauch wieder mitgezählt.
  * 2026-02-17: v1.31 — Hausverbrauch (ohne WB/WP/Batt): Batterie-Entladung wird nicht mehr doppelt addiert.
+ * 2026-02-18: v1.32 — Heizstab-Abregelung entschärft: Bei sinkendem Überschuss wird stufenweise reduziert
+ *                  (max. eine Stufe pro Zyklus) statt abrupt auf AUS zu fallen.
  */
 
 class PVRegelung extends IPSModule
@@ -610,7 +612,6 @@ class PVRegelung extends IPSModule
         if ($boilerTemp >= $target) return [0, $availableW];
 
         $minSurplus = (float)$CFG['heating_rod']['min_surplus_w'];
-        if ($availableW < $minSurplus) return [0, $availableW];
 
         $maxStage = $this->maxHeatingRodStage($CFG);
         if ($maxStage <= 0) return [0, $availableW];
@@ -618,32 +619,44 @@ class PVRegelung extends IPSModule
         $powerPerStage = max(0.0, (float)($CFG['heating_rod']['power_per_unit_w'] ?? 0.0));
         if ($powerPerStage <= 0.0) return [0, $availableW];
 
-        $desiredStage = min($maxStage, (int)floor($availableW / $powerPerStage));
-        if ($desiredStage <= 0) return [0, $availableW];
-
         $now = time();
-        $isOn = ((int)($state['rod_stage'] ?? 0)) > 0;
+        $currentStage = max(0, min($maxStage, (int)($state['rod_stage'] ?? 0)));
+        $isOn = $currentStage > 0;
         $lastOn  = (int)($state['rod_last_on_ts'] ?? 0);
         $lastOff = (int)($state['rod_last_off_ts'] ?? 0);
 
         $canTurnOn  = (!$isOn) && (($now - $lastOff) >= (int)$CFG['heating_rod']['min_off_seconds']);
         $canTurnOff = ($isOn)  && (($now - $lastOn)  >= (int)$CFG['heating_rod']['min_on_seconds']);
 
-        if (!$isOn && !$canTurnOn) return [0, $availableW];
+        if (!$isOn) {
+            if ($availableW < $minSurplus) return [0, $availableW];
+            if (!$canTurnOn) return [0, $availableW];
+        }
+
         if ($isOn && !$canTurnOff) {
-            $currentStage = max(0, min($maxStage, (int)($state['rod_stage'] ?? 0)));
             $usedW = $this->heatingRodPowerForStageW($CFG, $currentStage);
             return [$currentStage, max(0.0, $availableW - $usedW)];
         }
 
-        if ($isOn && (($availableW < $minSurplus * 0.8) || ($boilerTemp >= $target))) {
+        $desiredStage = min($maxStage, (int)floor($availableW / $powerPerStage));
+
+        $targetStage = $desiredStage;
+        if ($isOn && $availableW < ($minSurplus * 0.8)) {
+            $targetStage = max(0, $currentStage - 1);
+        }
+
+        if ($isOn && $targetStage < $currentStage) {
+            $targetStage = max($targetStage, $currentStage - 1);
+        }
+
+        if ($targetStage <= 0) {
             return [0, $availableW];
         }
 
-        $usedW = $this->heatingRodPowerForStageW($CFG, $desiredStage);
+        $usedW = $this->heatingRodPowerForStageW($CFG, $targetStage);
         $availableW = max(0.0, $availableW - $usedW);
 
-        return [$desiredStage, $availableW];
+        return [$targetStage, $availableW];
     }
 
     private function planWallboxRamped(array $CFG, array $state, float $availableW): array
