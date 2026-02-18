@@ -62,6 +62,8 @@ declare(strict_types=1);
  * 2026-02-17: v1.31 — Hausverbrauch (ohne WB/WP/Batt): Batterie-Entladung wird nicht mehr doppelt addiert.
  * 2026-02-18: v1.32 — Heizstab-Abregelung entschärft: Bei sinkendem Überschuss wird stufenweise reduziert
  *                  (max. eine Stufe pro Zyklus) statt abrupt auf AUS zu fallen.
+ * 2026-02-18: v1.33 — Heizstab-Stufung: Mindestlaufzeit-Timer wird nur bei Hochregeln neu gesetzt,
+ *                  damit bei abfallendem Überschuss weiterhin zeitnah weiter heruntergeregelt werden kann.
  */
 
 class PVRegelung extends IPSModule
@@ -1003,7 +1005,7 @@ class PVRegelung extends IPSModule
             return;
         }
 
-        if ($isNowOn && $isOn && $currentStage !== $targetStage) {
+        if ($isNowOn && $isOn && $targetStage > $currentStage) {
             $state['rod_last_on_ts'] = $now;
         }
     }
