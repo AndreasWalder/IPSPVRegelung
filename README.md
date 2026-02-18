@@ -110,7 +110,9 @@ Zusätzlich können Sie den Loop manuell starten oder den internen Zustand zurü
   - Gemessene WP-Leistungsaufnahme.
 - **HeatpumpSurplusOutVarID** (int), **HeatpumpSurplusOutUnit**
   - Ausgangssignal für **aktuellen PV-Überschuss** der WP (Export aus Netzsicht).
-  - Bei `HeatpumpSurplusOutSigned=false`: nur positiver Überschuss (unterhalb Deadband = 0).
+  - Bei `HeatpumpSurplusOutSigned=false`: `PV-Produktion - Hausverbrauch - Heizstab`.
+  - Für diese Berechnung wird der Hausverbrauch **ohne Wallbox/WP/Batterie** verwendet und nicht geglättet.
+  - Unterhalb `SurplusExportDeadbandW` wird `0` ausgegeben.
 - **HeatpumpSurplusOutSigned** (bool)
   - `false`: reiner Überschusswert (>= 0).
   - `true`: vorzeichenbehafteter Grid-Wert (Import positiv / Export negativ).
