@@ -386,15 +386,19 @@ class PVRegelung extends IPSModule
         $hpRunning = (bool)$this->readVar((int)$CFG['heatpump']['running_var'], false);
         $hpPowerW  = $this->readPowerToW($CFG['heatpump']['power_in']);
 
-        $this->writeHeatpumpSurplusSignal($CFG, $gridW, $exportW, $importW);
-        $this->writeHeatpumpPvProductionSignal($CFG, $pvTotalW);
-
         $rodPowerW = $this->heatingRodPowerForStageW($CFG, (int)($state['rod_stage'] ?? 0));
 
         $hpPowerForHouseW = $hpRunning ? $hpPowerW : 0.0;
         $battChargeForHouseW = max(0.0, $battPowerW);
         $battDischargeForHouseW = max(0.0, -$battPowerW);
         $houseLoadW = max(0.0, $buildingLoadW - $wallboxChargeW - $hpPowerForHouseW - $battChargeForHouseW);
+
+        $buildingLoadRawW = max(0.0, $pvTotalW + $gridW_raw + $battDischargeForHouseW);
+        $houseLoadNoWbWpBattW = max(0.0, $buildingLoadRawW - $wallboxChargeW - $hpPowerForHouseW - $battChargeForHouseW);
+
+        $this->writeHeatpumpSurplusSignal($CFG, $gridW, $pvTotalW, $houseLoadNoWbWpBattW, $rodPowerW);
+        $this->writeHeatpumpPvProductionSignal($CFG, $pvTotalW);
+
         $weeklyDaysSinceTarget = $this->readHeatingRodDaysSinceTargetReached($CFG);
         $this->updateUiVars($CFG, [
             'pv1W' => $pv1W,
@@ -1555,7 +1559,7 @@ class PVRegelung extends IPSModule
         IPS_SetVariableProfileValues($name, $min, $max, $step);
     }
 
-    private function writeHeatpumpSurplusSignal(array $CFG, float $gridW, float $exportW, float $importW): void
+    private function writeHeatpumpSurplusSignal(array $CFG, float $gridW, float $pvTotalW, float $houseLoadNoWbWpBattW, float $rodPowerW): void
     {
         $outId = (int)($CFG['heatpump']['surplus_out_var'] ?? 0);
         if ($outId <= 0) return;
@@ -1568,7 +1572,8 @@ class PVRegelung extends IPSModule
         if ($signed) {
             $valueW = $gridW;
         } else {
-            $valueW = ($exportW >= $deadbandW) ? $exportW : 0.0;
+            $valueW = max(0.0, $pvTotalW - $houseLoadNoWbWpBattW - $rodPowerW);
+            $valueW = ($valueW >= $deadbandW) ? $valueW : 0.0;
         }
 
         if ($unit === 'kW' || $unit === 'kw') {
