@@ -64,6 +64,8 @@ declare(strict_types=1);
  *                  (max. eine Stufe pro Zyklus) statt abrupt auf AUS zu fallen.
  * 2026-02-18: v1.33 — Heizstab-Stufung: Mindestlaufzeit-Timer wird nur bei Hochregeln neu gesetzt,
  *                  damit bei abfallendem Überschuss weiterhin zeitnah weiter heruntergeregelt werden kann.
+ * 2026-02-27: v1.34 — Wallbox manuell: Aktivierung "Manuell laden aktiv" erzwingt den Start unabhängig
+ *                  vom aktuellen SOC; das manuelle Laden wird nicht mehr sofort wegen Ziel-SOC blockiert.
  */
 
 class PVRegelung extends IPSModule
@@ -427,14 +429,6 @@ class PVRegelung extends IPSModule
         $maxImport = (float)$CFG['surplus']['max_grid_import_w'];
         [$manualActive, $manualPowerW, $manualTargetSoc, $carSoc] = $this->readManualWallboxConfig($CFG);
         $rodManualOn = $this->readHeatingRodManualOn($CFG);
-
-        if ($manualActive) {
-            $manualDone = $carSoc >= $manualTargetSoc;
-            if ($manualDone) {
-                $this->setManualVarByIdent('pv_manual_wb_enable', false);
-                $manualActive = false;
-            }
-        }
 
         if ($manualActive) {
             [$wbOn, $wbA, $state] = $this->planWallboxManualPower($CFG, $state, $manualPowerW);
