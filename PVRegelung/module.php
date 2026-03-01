@@ -472,7 +472,11 @@ class PVRegelung extends IPSModule
 
         $deadband  = (float)$CFG['surplus']['export_deadband_w'];
 
-        $availableBeforeWBW = $exportW + $wallboxChargeW;
+        // Für die Sollwertplanung ausschließlich echten PV-Überschuss verwenden.
+        // Die bisherige Addition der aktuellen Wallbox-Leistung führte dazu,
+        // dass sich der Regler bei wenig/keinem Überschuss selbst "am Leben"
+        // gehalten hat und unnötig Netzbezug bestehen blieb.
+        $availableBeforeWBW = $exportW;
         $remainingW = $availableBeforeWBW;
 
         $hpOn = false;
