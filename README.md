@@ -140,6 +140,10 @@ Zusätzlich können Sie den Loop manuell starten oder den internen Zustand zurü
   - Leistung je Stufe.
 - **HeatingRodMinSurplusW** (int, W)
   - Startschwelle für Heizstab (Default typ. hoch, z. B. 9 kW).
+- **HeatingRodSurplusHysteresisW** (int, W)
+  - Hysterese für das Zuschalten/Abschalten des Heizstabs (z. B. 4000 W), um Takten zu vermeiden.
+- **HeatingRodStartDelaySeconds** (int, s)
+  - Mindestdauer mit ausreichend Überschuss vor dem Zuschalten des Heizstabs (z. B. 90 s).
 - **HeatingRodMinOnSeconds** (int, s)
   - Mindest-EIN-Zeit.
 - **HeatingRodMinOffSeconds** (int, s)
@@ -198,6 +202,10 @@ Zusätzlich können Sie den Loop manuell starten oder den internen Zustand zurü
   - Mindest-AUS-Zeit.
 - **WallboxReserveW** (int, W)
   - Reserveleistung, die nicht vollständig verplant wird.
+- **WallboxSurplusHysteresisW** (int, W)
+  - Hysterese für Leistungsanpassung/Start-Stopp der Wallbox (z. B. 500 W).
+- **WallboxControlMinHoldSeconds** (int, s)
+  - Mindesthaltezeit zwischen Wallbox-Regeländerungen (z. B. 45 s).
 - **WallboxAutoStartMinSurplusW** (int, W)
   - Mindest-Überschuss für den automatischen Start der Wallbox (Standard: 2000 W).
 - **WallboxAutoStartMinDurationSeconds** (int, s)

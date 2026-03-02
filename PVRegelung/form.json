@@ -312,6 +312,20 @@
                 },
                 {
                     "type": "NumberSpinner",
+                    "name": "HeatingRodSurplusHysteresisW",
+                    "caption": "Heizstab Hysterese (W)",
+                    "minimum": 0,
+                    "maximum": 10000
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "HeatingRodStartDelaySeconds",
+                    "caption": "Heizstab Startverzögerung (s)",
+                    "minimum": 0,
+                    "maximum": 1800
+                },
+                {
+                    "type": "NumberSpinner",
                     "name": "HeatingRodMinOnSeconds",
                     "caption": "Min EIN (s)",
                     "minimum": 0,
@@ -463,6 +477,20 @@
                     "caption": "Reserve (W)",
                     "minimum": 0,
                     "maximum": 5000
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "WallboxSurplusHysteresisW",
+                    "caption": "Wallbox Hysterese (W)",
+                    "minimum": 0,
+                    "maximum": 5000
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "WallboxControlMinHoldSeconds",
+                    "caption": "Wallbox Regel-Haltezeit (s)",
+                    "minimum": 0,
+                    "maximum": 600
                 },
                 {
                     "type": "NumberSpinner",

@@ -129,8 +129,10 @@ class PVRegelung extends IPSModule
         $this->RegisterPropertyInteger('HeatingRodSwitchVarID3', 0);
         $this->RegisterPropertyInteger('HeatingRodPowerPerUnitW', 3000);
         $this->RegisterPropertyInteger('HeatingRodMinSurplusW', 9000);
+        $this->RegisterPropertyInteger('HeatingRodSurplusHysteresisW', 4000);
         $this->RegisterPropertyInteger('HeatingRodMinOnSeconds', 180);
         $this->RegisterPropertyInteger('HeatingRodMinOffSeconds', 180);
+        $this->RegisterPropertyInteger('HeatingRodStartDelaySeconds', 90);
 
         $this->RegisterPropertyBoolean('HeatingRodWeeklyEnabled', true);
         $this->RegisterPropertyInteger('HeatingRodDaysAfterTargetReached', 7);
@@ -159,8 +161,10 @@ class PVRegelung extends IPSModule
         $this->RegisterPropertyInteger('WallboxMinOnSeconds', 180);
         $this->RegisterPropertyInteger('WallboxMinOffSeconds', 120);
         $this->RegisterPropertyInteger('WallboxReserveW', 200);
+        $this->RegisterPropertyInteger('WallboxSurplusHysteresisW', 500);
         $this->RegisterPropertyInteger('WallboxAutoStartMinSurplusW', 2000);
         $this->RegisterPropertyInteger('WallboxAutoStartMinDurationSeconds', 900);
+        $this->RegisterPropertyInteger('WallboxControlMinHoldSeconds', 45);
 
         $this->RegisterPropertyInteger('WallboxRampUpA', 1);
         $this->RegisterPropertyInteger('WallboxRampDownA', 1);
@@ -311,8 +315,10 @@ class PVRegelung extends IPSModule
                 ],
                 'power_per_unit_w' => (int)$this->ReadPropertyInteger('HeatingRodPowerPerUnitW'),
                 'min_surplus_w' => (int)$this->ReadPropertyInteger('HeatingRodMinSurplusW'),
+                'surplus_hysteresis_w' => (int)$this->ReadPropertyInteger('HeatingRodSurplusHysteresisW'),
                 'min_on_seconds' => (int)$this->ReadPropertyInteger('HeatingRodMinOnSeconds'),
                 'min_off_seconds' => (int)$this->ReadPropertyInteger('HeatingRodMinOffSeconds'),
+                'start_delay_seconds' => (int)$this->ReadPropertyInteger('HeatingRodStartDelaySeconds'),
                 'weekly' => [
                     'enabled' => (bool)$this->ReadPropertyBoolean('HeatingRodWeeklyEnabled'),
                     'days_after_target_reached' => (int)$this->ReadPropertyInteger('HeatingRodDaysAfterTargetReached'),
@@ -339,8 +345,10 @@ class PVRegelung extends IPSModule
                 'min_on_seconds' => (int)$this->ReadPropertyInteger('WallboxMinOnSeconds'),
                 'min_off_seconds' => (int)$this->ReadPropertyInteger('WallboxMinOffSeconds'),
                 'reserve_w' => (int)$this->ReadPropertyInteger('WallboxReserveW'),
+                'surplus_hysteresis_w' => (int)$this->ReadPropertyInteger('WallboxSurplusHysteresisW'),
                 'auto_start_min_surplus_w' => (int)$this->ReadPropertyInteger('WallboxAutoStartMinSurplusW'),
                 'auto_start_min_duration_seconds' => (int)$this->ReadPropertyInteger('WallboxAutoStartMinDurationSeconds'),
+                'control_min_hold_seconds' => (int)$this->ReadPropertyInteger('WallboxControlMinHoldSeconds'),
                 'ramp_up_a_per_loop' => (int)$this->ReadPropertyInteger('WallboxRampUpA'),
                 'ramp_down_a_per_loop' => (int)$this->ReadPropertyInteger('WallboxRampDownA'),
                 'soft_off_grace_seconds' => (int)$this->ReadPropertyInteger('WallboxSoftOffGraceSeconds'),
@@ -650,6 +658,8 @@ class PVRegelung extends IPSModule
         if ($boilerTemp >= $target) return [0, $availableW];
 
         $minSurplus = (float)$CFG['heating_rod']['min_surplus_w'];
+        $surplusHyst = max(0.0, (float)($CFG['heating_rod']['surplus_hysteresis_w'] ?? 0.0));
+        $startDelayS = max(0, (int)($CFG['heating_rod']['start_delay_seconds'] ?? 0));
 
         $maxStage = $this->maxHeatingRodStage($CFG);
         if ($maxStage <= 0) return [0, $availableW];
@@ -667,8 +677,24 @@ class PVRegelung extends IPSModule
         $canTurnOff = ($isOn)  && (($now - $lastOn)  >= (int)$CFG['heating_rod']['min_on_seconds']);
 
         if (!$isOn) {
-            if ($availableW < $minSurplus) return [0, $availableW];
+            $rodStartThresholdW = $minSurplus + $surplusHyst;
+            if ($availableW >= $rodStartThresholdW) {
+                if (((int)($state['rod_start_surplus_since_ts'] ?? 0)) <= 0) {
+                    $state['rod_start_surplus_since_ts'] = $now;
+                }
+            } else {
+                $state['rod_start_surplus_since_ts'] = 0;
+                return [0, $availableW];
+            }
+
+            $surplusSince = (int)($state['rod_start_surplus_since_ts'] ?? 0);
+            $startDelayReached = $startDelayS <= 0
+                || ($surplusSince > 0 && (($now - $surplusSince) >= $startDelayS));
+
+            if (!$startDelayReached) return [0, $availableW];
             if (!$canTurnOn) return [0, $availableW];
+        } else {
+            $state['rod_start_surplus_since_ts'] = 0;
         }
 
         if ($isOn && !$canTurnOff) {
@@ -676,15 +702,13 @@ class PVRegelung extends IPSModule
             return [$currentStage, max(0.0, $availableW - $usedW)];
         }
 
-        $desiredStage = min($maxStage, (int)floor($availableW / $powerPerStage));
+        $targetStage = min($maxStage, (int)floor($availableW / $powerPerStage));
 
-        $targetStage = $desiredStage;
-        if ($isOn && $availableW < ($minSurplus * 0.8)) {
-            $targetStage = max(0, $currentStage - 1);
-        }
-
-        if ($isOn && $targetStage < $currentStage) {
-            $targetStage = max($targetStage, $currentStage - 1);
+        if ($isOn) {
+            $offThresholdW = max(0.0, $minSurplus - $surplusHyst);
+            if ($availableW < $offThresholdW) {
+                $targetStage = max(0, $currentStage - 1);
+            }
         }
 
         if ($targetStage <= 0) {
@@ -708,6 +732,8 @@ class PVRegelung extends IPSModule
         if ($setA <= 0) return [false, 0, $state];
 
         $reserve = (float)($CFG['wallbox']['reserve_w'] ?? 0.0);
+        $surplusHystW = max(0.0, (float)($CFG['wallbox']['surplus_hysteresis_w'] ?? 0.0));
+        $controlHoldS = max(0, (int)($CFG['wallbox']['control_min_hold_seconds'] ?? 0));
 
         $availableForPhaseDecisionW = max(0.0, $availableW);
         $availableW = max(0.0, $availableW - $reserve);
@@ -730,10 +756,10 @@ class PVRegelung extends IPSModule
         $targetA = (int)(floor($rawA / $step) * $step);
         $targetA = max(0, min($maxA, $targetA));
 
-        $now = time();
         $isOn = (bool)($state['wb_is_on'] ?? false);
         $lastOn  = (int)($state['wb_last_on_ts'] ?? 0);
         $lastOff = (int)($state['wb_last_off_ts'] ?? 0);
+        $now = time();
 
         $canTurnOn  = (!$isOn) && (($now - $lastOff) >= (int)($CFG['wallbox']['min_off_seconds'] ?? 120));
         $canTurnOff = ($isOn)  && (($now - $lastOn)  >= (int)($CFG['wallbox']['min_on_seconds'] ?? 180));
@@ -756,7 +782,22 @@ class PVRegelung extends IPSModule
         $curA = (int)$this->readVar($setA, 0);
         if (!$isOn) $curA = 0;
 
-        if ($targetA >= $minA) {
+        $lastControlChangeTs = (int)($state['wb_last_control_change_ts'] ?? 0);
+        $canChangeControl = ($lastControlChangeTs <= 0) ? true : (($now - $lastControlChangeTs) >= $controlHoldS);
+
+        $minPowerW = max(1.0, $voltage * $phases * $minA);
+        $availableStartW = $availableW;
+        if ($isOn && $availableW > 0.0) {
+            $availableStartW += $surplusHystW;
+        }
+
+        $curPowerW = $this->wallboxPowerFromA($CFG, $state, $curA);
+        $targetPowerW = $this->wallboxPowerFromA($CFG, $state, $targetA);
+        if ($isOn && abs($targetPowerW - $curPowerW) < $surplusHystW) {
+            $targetA = $curA;
+        }
+
+        if ($targetA >= $minA && $availableStartW >= ($minPowerW + $surplusHystW)) {
             if (!$isOn) {
                 $surplusSince = (int)($state['wb_start_surplus_since_ts'] ?? 0);
                 $surplusDurationReached = $autoStartMinDurationS <= 0
@@ -770,7 +811,13 @@ class PVRegelung extends IPSModule
             if (!$isOn && !$canTurnOn) return [false, 0, $state];
 
             $desiredA = max($minA, $targetA);
-            $newA = $this->moveTowardsInt($curA, $desiredA, $rampUp, $rampDown);
+            $newA = $canChangeControl
+                ? $this->moveTowardsInt($curA, $desiredA, $rampUp, $rampDown)
+                : $curA;
+
+            if ($newA !== $curA) {
+                $state['wb_last_control_change_ts'] = $now;
+            }
 
             $state['wb_deficit_since_ts'] = 0;
             return [true, $newA, $state];
@@ -783,7 +830,13 @@ class PVRegelung extends IPSModule
                 $defSince = $now;
             }
 
-            $newA = $this->moveTowardsInt($curA, 0, $rampUp, $rampDown);
+            $newA = $canChangeControl
+                ? $this->moveTowardsInt($curA, 0, $rampUp, $rampDown)
+                : $curA;
+
+            if ($newA !== $curA) {
+                $state['wb_last_control_change_ts'] = $now;
+            }
 
             if ($newA > 0) {
                 return [true, $newA, $state];
