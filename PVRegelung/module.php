@@ -1336,6 +1336,7 @@ class PVRegelung extends IPSModule
         $this->moveObjectByIdent($root, $cHeat, 'pv_manual_rod_on');
         $this->moveObjectByIdent($root, $cHeat, 'pv_rod_days_since_target');
         $this->moveObjectByIdent($root, $cHeat, 'pv_dbg_rod_days_since_target_actual');
+        $this->moveObjectByIdent($root, $cHeat, 'pv_dbg_rod_last_target_status');
         $this->moveObjectByIdent($root, $cHeat, 'pv_dbg_weekly_active');
         $this->moveObjectByIdent($root, $cHeat, 'pv_dbg_hp_on');
         $this->moveObjectByIdent($root, $cHeat, 'pv_dbg_rod_on');
