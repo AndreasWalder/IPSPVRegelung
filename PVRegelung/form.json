@@ -404,11 +404,6 @@
                     "caption": "Fahrzeug angesteckt / Status (optional)"
                 },
                 {
-                    "type": "CheckBox",
-                    "name": "WallboxCarConnectedTrueMeansConnected",
-                    "caption": "Nur bei Bool: true bedeutet Fahrzeug angesteckt"
-                },
-                {
                     "type": "SelectVariable",
                     "name": "WallboxPhase1pVarID",
                     "caption": "Phasen Bool (true=1P / false=3P)"

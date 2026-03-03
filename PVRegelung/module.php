@@ -73,6 +73,8 @@ declare(strict_types=1);
  *                  Verbrauchern (z. B. Heizstab) zur Verfügung.
  * 2026-03-03: v1.37 — Wallbox Fahrzeugerkennung erweitert: Neben Bool wird jetzt auch ein
  *                  go-eCharger-Status (Integer) unterstützt. Integer > 1 gilt als Fahrzeug erkannt.
+ * 2026-03-03: v1.38 — Option "Bool true bedeutet Fahrzeug angesteckt" entfernt.
+ *                  Bool wird nun immer direkt ausgewertet (true=angesteckt), Integer-Status bleibt >1.
  */
 
 class PVRegelung extends IPSModule
@@ -150,7 +152,6 @@ class PVRegelung extends IPSModule
         $this->RegisterPropertyString('WallboxChargePowerUnit', 'kW');
         $this->RegisterPropertyInteger('WallboxSetCurrentAVarID', 56376);
         $this->RegisterPropertyInteger('WallboxCarConnectedVarID', 0);
-        $this->RegisterPropertyBoolean('WallboxCarConnectedTrueMeansConnected', true);
 
         $this->RegisterPropertyInteger('WallboxPhase1pVarID', 19401);
         $this->RegisterPropertyBoolean('WallboxPhaseTrueIs1p', true);
@@ -339,7 +340,6 @@ class PVRegelung extends IPSModule
                 'charge_power' => ['id' => (int)$this->ReadPropertyInteger('WallboxChargePowerVarID'), 'unit' => (string)$this->ReadPropertyString('WallboxChargePowerUnit')],
                 'set_current_a_var' => (int)$this->ReadPropertyInteger('WallboxSetCurrentAVarID'),
                 'car_connected_var' => (int)$this->ReadPropertyInteger('WallboxCarConnectedVarID'),
-                'car_connected_true_means_connected' => (bool)$this->ReadPropertyBoolean('WallboxCarConnectedTrueMeansConnected'),
                 'phase_1p_var' => (int)$this->ReadPropertyInteger('WallboxPhase1pVarID'),
                 'phase_true_is_1p' => (bool)$this->ReadPropertyBoolean('WallboxPhaseTrueIs1p'),
                 'phase_min_hold_seconds' => (int)$this->ReadPropertyInteger('WallboxPhaseMinHoldSeconds'),
@@ -1093,9 +1093,7 @@ class PVRegelung extends IPSModule
             return $status > 1;
         }
 
-        $trueMeansConnected = (bool)($CFG['wallbox']['car_connected_true_means_connected'] ?? true);
-        $value = (bool)$this->readVar($varId, false);
-        return $trueMeansConnected ? $value : !$value;
+        return (bool)$this->readVar($varId, false);
     }
 
     private function applyHeatingRodStage(array $CFG, array &$state, int $stage): void
