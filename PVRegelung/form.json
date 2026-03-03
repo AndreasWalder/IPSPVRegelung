@@ -630,6 +630,11 @@
             "type": "Button",
             "label": "State zurücksetzen",
             "onClick": "PVREG_ResetState($id);"
+        },
+        {
+            "type": "Button",
+            "label": "JSON exportieren",
+            "onClick": "PVREG_ExportSettingsJson($id);"
         }
     ]
 }

@@ -264,6 +264,53 @@ class PVRegelung extends IPSModule
         $this->SetBuffer('PV_STATE_JSON', '');
     }
 
+    public function ExportSettingsJson(): void
+    {
+        $CFG = $this->buildCfg();
+        $this->ensureUiStructure($CFG);
+
+        $root = $this->ensureCategoryByIdent($this->InstanceID, 'pv_ui_root', (string)($CFG['ui']['root_name'] ?? 'PV Regelung'));
+        $cWb = $this->ensureCategoryByIdent($root, 'pv_ui_wb', 'Wallbox');
+        $cHeat = $this->ensureCategoryByIdent($root, 'pv_ui_heat', 'Heizung');
+
+        $configuration = json_decode((string)IPS_GetConfiguration($this->InstanceID), true);
+        if (!is_array($configuration)) {
+            $configuration = [];
+        }
+
+        $export = [
+            'timestamp' => date('c'),
+            'instance_id' => $this->InstanceID,
+            'configuration' => $configuration,
+            'cfg' => $CFG,
+            'state' => $this->loadState(),
+            'ui' => [
+                'wallbox' => [
+                    'manual_enable' => (bool)$this->readVarByIdent($cWb, 'pv_manual_wb_enable', false),
+                    'manual_power_kw' => (float)$this->readVarByIdent($cWb, 'pv_manual_wb_power_w', 0.0),
+                    'manual_target_soc' => (float)$this->readVarByIdent($cWb, 'pv_manual_wb_target_soc', 0.0),
+                    'car_soc' => (float)$this->readVarByIdent($cWb, 'pv_manual_wb_car_soc', 0.0),
+                    'car_connected' => (bool)$this->readVarByIdent($cWb, 'pv_wb_car_connected', false),
+                    'target_a' => (int)$this->readVarByIdent($cWb, 'pv_wb_target_a', 0),
+                    'power_kw' => (float)$this->readVarByIdent($cWb, 'pv_wb_power_kw', 0.0),
+                ],
+                'heating' => [
+                    'auto_mode' => (bool)$this->readVarByIdent($cHeat, 'pv_rod_auto_mode', true),
+                    'manual_on' => (bool)$this->readVarByIdent($cHeat, 'pv_manual_rod_on', false),
+                    'boiler_target_c' => (float)$this->readVarByIdent($cHeat, 'pv_boiler_target_c', 0.0),
+                ],
+            ],
+        ];
+
+        $json = json_encode($export, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if ($json === false) {
+            $json = '{"error":"json_encode fehlgeschlagen"}';
+        }
+
+        $this->setVarByIdent($root, 'pv_debug_json_export', $json);
+        IPS_LogMessage('PVRegelung JSON Export', $json);
+    }
+
     private function runLoop(): void
     {
         $CFG = $this->buildCfg();
@@ -425,6 +472,7 @@ class PVRegelung extends IPSModule
         $this->writeHeatpumpPvProductionSignal($CFG, $pvTotalW);
 
         $weeklyDaysSinceTarget = $this->readHeatingRodDaysSinceTargetReached($CFG);
+        $carConnected = $this->isWallboxCarConnected($CFG);
         $this->updateUiVars($CFG, [
             'pv1W' => $pv1W,
             'pv2W' => $pv2W,
@@ -435,6 +483,7 @@ class PVRegelung extends IPSModule
             'exportW' => $exportW,
             'buildingLoadW' => $buildingLoadW,
             'wallboxChargeW' => $wallboxChargeW,
+            'carConnected' => $carConnected ? 1 : 0,
             'boilerTemp' => $boilerTemp,
             'soc' => $soc,
             'hpRunning' => $hpRunning ? 1 : 0,
@@ -1252,6 +1301,7 @@ class PVRegelung extends IPSModule
         $this->ensureActionVariableByIdent($cWb, 'pv_manual_wb_power_w', 'Manuelle Ladeleistung', 2, 'PV_kWI');
         $this->ensureActionVariableByIdent($cWb, 'pv_manual_wb_target_soc', 'Manuelles Ziel-SOC', 2, 'PV_PCT');
         $this->ensureVariableByIdent($cWb, 'pv_manual_wb_car_soc', 'Auto SOC (Ist)', 2, 'PV_PCT');
+        $this->ensureVariableByIdent($cWb, 'pv_wb_car_connected', 'Fahrzeug angesteckt', 0, '~Switch');
 
         $this->ensureVariableByIdent($cBat, 'pv_soc', 'SOC', 2, 'PV_PCT');
 
@@ -1292,6 +1342,7 @@ class PVRegelung extends IPSModule
         $this->ensureVariableByIdent($root, 'pv_dbg_remaining_kw', 'Rest-Überschuss vor WB', 2, 'PV_kW');
         $this->ensureVariableByIdent($root, 'pv_decision_text', 'Aktuelle Entscheidung', 3, '');
         $this->ensureVariableByIdent($root, 'pv_forecast_text', 'Nächste Tendenz', 3, '');
+        $this->ensureVariableByIdent($root, 'pv_debug_json_export', 'Debug JSON Export', 3, '');
     }
 
     private function updateUiVars(array $CFG, array $v): void
@@ -1329,6 +1380,7 @@ class PVRegelung extends IPSModule
         if (isset($v['manualPowerW'])) $this->setVarByIdent($cWb, 'pv_manual_wb_power_w', round(((float)$v['manualPowerW']) / 1000.0));
         if (isset($v['manualTargetSoc'])) $this->setVarByIdent($cWb, 'pv_manual_wb_target_soc', (float)$v['manualTargetSoc']);
         if (isset($v['manualCarSoc'])) $this->setVarByIdent($cWb, 'pv_manual_wb_car_soc', (float)$v['manualCarSoc']);
+        if (isset($v['carConnected'])) $this->setVarByIdent($cWb, 'pv_wb_car_connected', ((int)$v['carConnected']) === 1);
 
         if (isset($v['soc'])) $this->setVarByIdent($cBat, 'pv_soc', (float)$v['soc']);
 
