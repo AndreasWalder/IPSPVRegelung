@@ -510,6 +510,7 @@ class PVRegelung extends IPSModule
                 'manualPowerW' => $manualPowerW,
                 'manualTargetSoc' => $manualTargetSoc,
                 'carSoc' => $carSoc,
+                'carConnected' => $carConnected,
             ]);
 
             $this->updateUiVars($CFG, [
@@ -542,6 +543,7 @@ class PVRegelung extends IPSModule
                 'mode' => 'import_limit',
                 'importW' => $importW,
                 'maxImportW' => $maxImport,
+                'carConnected' => $carConnected,
             ]);
             $this->updateUiVars($CFG, [
                 'restSurplusW' => 0.0,
@@ -585,6 +587,7 @@ class PVRegelung extends IPSModule
                 'exportW' => $exportW,
                 'deadbandW' => $deadband,
                 'wbA' => $wbA,
+                'carConnected' => $carConnected,
             ]);
 
             $this->updateUiVars($CFG, [
@@ -651,6 +654,7 @@ class PVRegelung extends IPSModule
             'rodStage' => $rodStage,
             'wbOn' => $wbOn,
             'remainingW' => $remainingW,
+            'carConnected' => $carConnected,
         ]);
 
         $this->updateUiVars($CFG, [
@@ -1405,8 +1409,16 @@ class PVRegelung extends IPSModule
     private function buildDecisionTexts(array $ctx): array
     {
         $mode = (string)($ctx['mode'] ?? 'auto');
+        $carConnected = (bool)($ctx['carConnected'] ?? true);
 
         if ($mode === 'manual_wb') {
+            if (!$carConnected) {
+                return [
+                    'Manuell aktiv, aber kein Fahrzeug angesteckt: Wallbox bleibt AUS.',
+                    'Wenn ein Fahrzeug angesteckt wird, kann die manuelle Ladung starten.',
+                ];
+            }
+
             $powerKw = round(max(0.0, ((float)($ctx['manualPowerW'] ?? 0.0)) / 1000.0), 1);
             $targetSoc = (float)($ctx['manualTargetSoc'] ?? 0.0);
             $carSoc = (float)($ctx['carSoc'] ?? 0.0);
@@ -1423,7 +1435,9 @@ class PVRegelung extends IPSModule
             $limitKw = round(((float)($ctx['maxImportW'] ?? 0.0)) / 1000.0, 2);
             return [
                 sprintf('Netzbezug zu hoch (%.2f kW > %.2f kW): Verbraucher werden reduziert.', $importKw, $limitKw),
-                'Wenn Bezug sinkt, schaltet die Automatik Wallbox/WP/Heizstab wieder stufenweise zu.',
+                $carConnected
+                    ? 'Wenn Bezug sinkt, schaltet die Automatik Wallbox/WP/Heizstab wieder stufenweise zu.'
+                    : 'Wenn Bezug sinkt, schaltet die Automatik WP/Heizstab wieder stufenweise zu (Wallbox bleibt ohne Fahrzeug außen vor).',
             ];
         }
 
@@ -1432,10 +1446,14 @@ class PVRegelung extends IPSModule
             $deadbandKw = round(((float)($ctx['deadbandW'] ?? 0.0)) / 1000.0, 2);
             $wbA = (int)($ctx['wbA'] ?? 0);
             return [
-                sprintf('Zu wenig Überschuss (%.2f kW < %.2f kW): WP/Heizstab aus, Wallbox nur sanft.', $exportKw, $deadbandKw),
-                $wbA > 0
-                    ? 'Wenn Überschuss weiter fällt, regelt die Wallbox weiter herunter bis AUS.'
-                    : 'Wenn Überschuss steigt, startet zuerst die Wallbox wieder sanft.',
+                $carConnected
+                    ? sprintf('Zu wenig Überschuss (%.2f kW < %.2f kW): WP/Heizstab aus, Wallbox nur sanft.', $exportKw, $deadbandKw)
+                    : sprintf('Zu wenig Überschuss (%.2f kW < %.2f kW): WP/Heizstab aus, Wallbox ohne Fahrzeug deaktiviert.', $exportKw, $deadbandKw),
+                !$carConnected
+                    ? 'Kein Fahrzeug angesteckt: Bei steigendem Überschuss bleiben Wallbox-Entscheidungen deaktiviert.'
+                    : ($wbA > 0
+                        ? 'Wenn Überschuss weiter fällt, regelt die Wallbox weiter herunter bis AUS.'
+                        : 'Wenn Überschuss steigt, startet zuerst die Wallbox wieder sanft.'),
             ];
         }
 
@@ -1451,7 +1469,9 @@ class PVRegelung extends IPSModule
 
         $decision = 'Auto: ' . implode(', ', $parts) . '.';
         $forecast = $remainingKw > 0.5
-            ? sprintf('Bei stabilen Werten ist als Nächstes mehr Wallbox-Leistung möglich (Rest %.2f kW).', $remainingKw)
+            ? ($carConnected
+                ? sprintf('Bei stabilen Werten ist als Nächstes mehr Wallbox-Leistung möglich (Rest %.2f kW).', $remainingKw)
+                : sprintf('Bei stabilen Werten bleibt die Wallbox ohne Fahrzeug außen vor (Rest %.2f kW).', $remainingKw))
             : sprintf('Bei stabilen Werten bleibt die Regelung etwa so (Rest %.2f kW).', $remainingKw);
 
         return [$decision, $forecast];
