@@ -505,12 +505,16 @@ class PVRegelung extends IPSModule
             $this->applyHeatpump($CFG, $state, false);
             $this->applyHeatingRodStage($CFG, $state, 0);
             $this->applyWallbox($CFG, $state, $wbOn, $wbA);
-            [$decisionText, $forecastText] = $this->buildDecisionTexts([
+            [$decisionText, $forecastText, $detailsText] = $this->buildDecisionTexts([
                 'mode' => 'manual_wb',
                 'manualPowerW' => $manualPowerW,
                 'manualTargetSoc' => $manualTargetSoc,
                 'carSoc' => $carSoc,
                 'carConnected' => $carConnected,
+                'hpOn' => false,
+                'rodStage' => 0,
+                'wbOn' => $wbOn,
+                'wbA' => $wbA,
             ]);
 
             $this->updateUiVars($CFG, [
@@ -528,6 +532,7 @@ class PVRegelung extends IPSModule
                 'manualCarSoc' => $carSoc,
                 'decisionText' => $decisionText,
                 'forecastText' => $forecastText,
+                'detailsText' => $detailsText,
             ]);
 
             $this->saveState($state);
@@ -539,11 +544,18 @@ class PVRegelung extends IPSModule
             $this->applyHeatpump($CFG, $state, false);
             $this->applyHeatingRodStage($CFG, $state, 0);
             $this->applyWallbox($CFG, $state, (bool)($state['wb_soft_on'] ?? false), (int)($state['wb_soft_a'] ?? 0));
-            [$decisionText, $forecastText] = $this->buildDecisionTexts([
+            $softWbOn = (bool)($state['wb_soft_on'] ?? false);
+            $softWbA = (int)($state['wb_soft_a'] ?? 0);
+            [$decisionText, $forecastText, $detailsText] = $this->buildDecisionTexts([
                 'mode' => 'import_limit',
                 'importW' => $importW,
                 'maxImportW' => $maxImport,
                 'carConnected' => $carConnected,
+                'hpOn' => false,
+                'rodStage' => 0,
+                'wbOn' => $softWbOn,
+                'wbA' => $softWbA,
+                'remainingW' => 0.0,
             ]);
             $this->updateUiVars($CFG, [
                 'restSurplusW' => 0.0,
@@ -552,6 +564,7 @@ class PVRegelung extends IPSModule
                 'weeklyRodActive' => 0,
                 'decisionText' => $decisionText,
                 'forecastText' => $forecastText,
+                'detailsText' => $detailsText,
             ]);
             $this->saveState($state);
             return;
@@ -582,12 +595,15 @@ class PVRegelung extends IPSModule
             $wbTargetW = $this->wallboxPowerFromA($CFG, $state, $wbA);
             $reserveW = (float)($CFG['wallbox']['reserve_w'] ?? 0.0);
             $restSurplusW = max(0.0, $availableBeforeWBW - $wbTargetW - $reserveW);
-            [$decisionText, $forecastText] = $this->buildDecisionTexts([
+            [$decisionText, $forecastText, $detailsText] = $this->buildDecisionTexts([
                 'mode' => 'low_surplus',
                 'exportW' => $exportW,
                 'deadbandW' => $deadband,
                 'wbA' => $wbA,
                 'carConnected' => $carConnected,
+                'hpOn' => false,
+                'rodStage' => 0,
+                'wbOn' => $wbOn,
             ]);
 
             $this->updateUiVars($CFG, [
@@ -603,6 +619,7 @@ class PVRegelung extends IPSModule
                 'manualActive' => 0,
                 'decisionText' => $decisionText,
                 'forecastText' => $forecastText,
+                'detailsText' => $detailsText,
             ]);
 
             $this->saveState($state);
@@ -648,11 +665,12 @@ class PVRegelung extends IPSModule
         $reserveW = (float)($CFG['wallbox']['reserve_w'] ?? 0.0);
 
         $restSurplusW = max(0.0, $availableBeforeWBW - $hpUsedW - $rodUsedW - $wbTargetW - $reserveW);
-        [$decisionText, $forecastText] = $this->buildDecisionTexts([
+        [$decisionText, $forecastText, $detailsText] = $this->buildDecisionTexts([
             'mode' => 'auto',
             'hpOn' => $hpOn,
             'rodStage' => $rodStage,
             'wbOn' => $wbOn,
+            'wbA' => $wbA,
             'remainingW' => $remainingW,
             'carConnected' => $carConnected,
         ]);
@@ -671,6 +689,7 @@ class PVRegelung extends IPSModule
             'manualRodOn' => $rodManualOn ? 1 : 0,
             'decisionText' => $decisionText,
             'forecastText' => $forecastText,
+            'detailsText' => $detailsText,
         ]);
 
         $this->saveState($state);
@@ -1346,6 +1365,7 @@ class PVRegelung extends IPSModule
         $this->ensureVariableByIdent($root, 'pv_dbg_remaining_kw', 'Rest-Überschuss vor WB', 2, 'PV_kW');
         $this->ensureVariableByIdent($root, 'pv_decision_text', 'Aktuelle Entscheidung', 3, '');
         $this->ensureVariableByIdent($root, 'pv_forecast_text', 'Nächste Tendenz', 3, '');
+        $this->ensureVariableByIdent($root, 'pv_decision_details_text', 'Regelungsdetails', 3, '');
         $this->ensureVariableByIdent($root, 'pv_debug_json_export', 'Debug JSON Export', 3, '');
     }
 
@@ -1404,12 +1424,19 @@ class PVRegelung extends IPSModule
         if (isset($v['hpPowerW']))  $this->setVarByIdent($cHeat, 'pv_dbg_hp_power_kw', $this->wToKw((float)$v['hpPowerW']));
         if (isset($v['decisionText'])) $this->setVarByIdent($root, 'pv_decision_text', (string)$v['decisionText']);
         if (isset($v['forecastText'])) $this->setVarByIdent($root, 'pv_forecast_text', (string)$v['forecastText']);
+        if (isset($v['detailsText'])) $this->setVarByIdent($root, 'pv_decision_details_text', (string)$v['detailsText']);
     }
 
     private function buildDecisionTexts(array $ctx): array
     {
         $mode = (string)($ctx['mode'] ?? 'auto');
         $carConnected = (bool)($ctx['carConnected'] ?? true);
+
+        $hpOn = (bool)($ctx['hpOn'] ?? false);
+        $rodStage = max(0, (int)($ctx['rodStage'] ?? 0));
+        $wbOn = (bool)($ctx['wbOn'] ?? false);
+        $wbA = max(0, (int)($ctx['wbA'] ?? 0));
+        $remainingKw = round(((float)($ctx['remainingW'] ?? 0.0)) / 1000.0, 2);
 
         if ($mode === 'manual_wb') {
             if (!$carConnected) {
@@ -1422,45 +1449,73 @@ class PVRegelung extends IPSModule
             $powerKw = round(max(0.0, ((float)($ctx['manualPowerW'] ?? 0.0)) / 1000.0), 1);
             $targetSoc = (float)($ctx['manualTargetSoc'] ?? 0.0);
             $carSoc = (float)($ctx['carSoc'] ?? 0.0);
-            return [
-                sprintf('Manuell: Wallbox lädt mit %.1f kW (SOC %.0f%%/%.0f%%).', $powerKw, $carSoc, $targetSoc),
-                $carSoc >= $targetSoc
+
+            if (!$carConnected) {
+                $decision = 'Manuell aktiv, aber kein Fahrzeug angesteckt: Wallbox bleibt AUS.';
+                $forecast = 'Wenn ein Fahrzeug angesteckt wird, kann die manuelle Ladung starten.';
+            } else {
+                $decision = sprintf('Manuell: Wallbox lädt mit %.1f kW (SOC %.0f%%/%.0f%%).', $powerKw, $carSoc, $targetSoc);
+                $forecast = $carSoc >= $targetSoc
                     ? 'Wenn manuell aktiv bleibt, stoppt Laden bei Ziel-SOC.'
-                    : 'Wenn Werte stabil bleiben, lädt die Wallbox bis zum Ziel-SOC weiter.',
-            ];
+                    : 'Wenn Werte stabil bleiben, lädt die Wallbox bis zum Ziel-SOC weiter.';
+            }
+
+            $details = implode("\n", [
+                'Regelstatus (manuell):',
+                '• Wärmepumpe: AUS (manuell WB hat Vorrang).',
+                '• Heizstab: AUS (manuell WB hat Vorrang).',
+                $carConnected
+                    ? sprintf('• Wallbox: %s mit %d A (Soll %.1f kW).', $wbOn ? 'EIN' : 'AUS', $wbA, $powerKw)
+                    : '• Wallbox: AUS (kein Fahrzeug angesteckt).',
+            ]);
+
+            return [$decision, $forecast, $details];
         }
 
         if ($mode === 'import_limit') {
             $importKw = round(((float)($ctx['importW'] ?? 0.0)) / 1000.0, 2);
             $limitKw = round(((float)($ctx['maxImportW'] ?? 0.0)) / 1000.0, 2);
-            return [
-                sprintf('Netzbezug zu hoch (%.2f kW > %.2f kW): Verbraucher werden reduziert.', $importKw, $limitKw),
+            $decision = sprintf('Netzbezug zu hoch (%.2f kW > %.2f kW): Verbraucher werden reduziert.', $importKw, $limitKw);
+            $forecast = $carConnected
+                ? 'Wenn Bezug sinkt, schaltet die Automatik Wallbox/WP/Heizstab wieder stufenweise zu.'
+                : 'Wenn Bezug sinkt, schaltet die Automatik WP/Heizstab wieder stufenweise zu (Wallbox bleibt ohne Fahrzeug außen vor).';
+
+            $details = implode("\n", [
+                'Regelstatus (Importbegrenzung):',
+                sprintf('• Wärmepumpe: %s.', $hpOn ? 'EIN' : 'AUS'),
+                sprintf('• Heizstab: %s.', $rodStage > 0 ? ('Stufe ' . $rodStage) : 'AUS'),
                 $carConnected
-                    ? 'Wenn Bezug sinkt, schaltet die Automatik Wallbox/WP/Heizstab wieder stufenweise zu.'
-                    : 'Wenn Bezug sinkt, schaltet die Automatik WP/Heizstab wieder stufenweise zu (Wallbox bleibt ohne Fahrzeug außen vor).',
-            ];
+                    ? sprintf('• Wallbox: %s%s.', $wbOn ? 'Soft-Modus aktiv' : 'AUS', $wbOn ? (' (' . $wbA . ' A)') : '')
+                    : '• Wallbox: AUS (kein Fahrzeug angesteckt).',
+            ]);
+
+            return [$decision, $forecast, $details];
         }
 
         if ($mode === 'low_surplus') {
             $exportKw = round(((float)($ctx['exportW'] ?? 0.0)) / 1000.0, 2);
             $deadbandKw = round(((float)($ctx['deadbandW'] ?? 0.0)) / 1000.0, 2);
-            $wbA = (int)($ctx['wbA'] ?? 0);
-            return [
-                $carConnected
-                    ? sprintf('Zu wenig Überschuss (%.2f kW < %.2f kW): WP/Heizstab aus, Wallbox nur sanft.', $exportKw, $deadbandKw)
-                    : sprintf('Zu wenig Überschuss (%.2f kW < %.2f kW): WP/Heizstab aus, Wallbox ohne Fahrzeug deaktiviert.', $exportKw, $deadbandKw),
-                !$carConnected
-                    ? 'Kein Fahrzeug angesteckt: Bei steigendem Überschuss bleiben Wallbox-Entscheidungen deaktiviert.'
-                    : ($wbA > 0
-                        ? 'Wenn Überschuss weiter fällt, regelt die Wallbox weiter herunter bis AUS.'
-                        : 'Wenn Überschuss steigt, startet zuerst die Wallbox wieder sanft.'),
-            ];
-        }
+            $decision = $carConnected
+                ? sprintf('Zu wenig Überschuss (%.2f kW < %.2f kW): WP/Heizstab aus, Wallbox nur sanft.', $exportKw, $deadbandKw)
+                : sprintf('Zu wenig Überschuss (%.2f kW < %.2f kW): WP/Heizstab aus, Wallbox ohne Fahrzeug deaktiviert.', $exportKw, $deadbandKw);
 
-        $hpOn = (bool)($ctx['hpOn'] ?? false);
-        $rodStage = max(0, (int)($ctx['rodStage'] ?? 0));
-        $wbOn = (bool)($ctx['wbOn'] ?? false);
-        $remainingKw = round(((float)($ctx['remainingW'] ?? 0.0)) / 1000.0, 2);
+            $forecast = !$carConnected
+                ? 'Kein Fahrzeug angesteckt: Bei steigendem Überschuss bleiben Wallbox-Entscheidungen deaktiviert.'
+                : ($wbA > 0
+                    ? 'Wenn Überschuss weiter fällt, regelt die Wallbox weiter herunter bis AUS.'
+                    : 'Wenn Überschuss steigt, startet zuerst die Wallbox wieder sanft.');
+
+            $details = implode("\n", [
+                'Regelstatus (niedriger Überschuss):',
+                '• Wärmepumpe: AUS.',
+                '• Heizstab: AUS.',
+                $carConnected
+                    ? sprintf('• Wallbox: %s%s.', $wbOn ? 'EIN' : 'AUS', $wbOn ? (' (' . $wbA . ' A, sanfte Regelung)') : '')
+                    : '• Wallbox: AUS (kein Fahrzeug angesteckt).',
+            ]);
+
+            return [$decision, $forecast, $details];
+        }
 
         $parts = [];
         $parts[] = $hpOn ? 'WP EIN' : 'WP AUS';
@@ -1474,7 +1529,17 @@ class PVRegelung extends IPSModule
                 : sprintf('Bei stabilen Werten bleibt die Wallbox ohne Fahrzeug außen vor (Rest %.2f kW).', $remainingKw))
             : sprintf('Bei stabilen Werten bleibt die Regelung etwa so (Rest %.2f kW).', $remainingKw);
 
-        return [$decision, $forecast];
+        $details = implode("\n", [
+            'Regelstatus (automatisch):',
+            sprintf('• Wärmepumpe: %s.', $hpOn ? 'EIN' : 'AUS'),
+            sprintf('• Heizstab: %s.', $rodStage > 0 ? ('Stufe ' . $rodStage) : 'AUS'),
+            $carConnected
+                ? sprintf('• Wallbox: %s%s.', $wbOn ? 'EIN' : 'AUS', $wbOn ? (' (' . $wbA . ' A)') : '')
+                : '• Wallbox: AUS (kein Fahrzeug angesteckt).',
+            sprintf('• Rest-Überschuss nach Planung: %.2f kW.', $remainingKw),
+        ]);
+
+        return [$decision, $forecast, $details];
     }
 
     private function readPowerToW(array $src): float
