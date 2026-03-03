@@ -1439,6 +1439,13 @@ class PVRegelung extends IPSModule
         $remainingKw = round(((float)($ctx['remainingW'] ?? 0.0)) / 1000.0, 2);
 
         if ($mode === 'manual_wb') {
+            if (!$carConnected) {
+                return [
+                    'Manuell aktiv, aber kein Fahrzeug angesteckt: Wallbox bleibt AUS.',
+                    'Wenn ein Fahrzeug angesteckt wird, kann die manuelle Ladung starten.',
+                ];
+            }
+
             $powerKw = round(max(0.0, ((float)($ctx['manualPowerW'] ?? 0.0)) / 1000.0), 1);
             $targetSoc = (float)($ctx['manualTargetSoc'] ?? 0.0);
             $carSoc = (float)($ctx['carSoc'] ?? 0.0);
