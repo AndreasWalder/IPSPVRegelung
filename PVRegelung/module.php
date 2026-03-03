@@ -583,7 +583,7 @@ class PVRegelung extends IPSModule
         $rodOn = false;
         $wbOn = false;
         $wbA = 0;
-        $rodDaysSinceTargetActual = $this->daysSinceLastTargetReached($state);
+        [$rodDaysDisplay, $rodLastTargetStatus] = $this->buildRodLastTargetUiState($state);
 
         if ($exportW < $deadband && !$rodManualOn) {
             [$wbOn, $wbA, $state] = $this->planWallboxRamped($CFG, $state, $remainingW);
@@ -614,7 +614,8 @@ class PVRegelung extends IPSModule
                 'wbA' => $wbA,
                 'remainingW' => $remainingW,
                 'weeklyRodActive' => 0,
-                'rodDaysSinceTargetActual' => $rodDaysSinceTargetActual,
+                'rodDaysSinceTargetActual' => $rodDaysDisplay,
+                'rodLastTargetStatus' => $rodLastTargetStatus,
                 'restSurplusW' => $restSurplusW,
                 'manualActive' => 0,
                 'decisionText' => $decisionText,
@@ -634,6 +635,7 @@ class PVRegelung extends IPSModule
         if ($boilerTemp >= $rodTargetC) {
             $state['rod_last_target_reached_ts'] = time();
         }
+        [$rodDaysDisplay, $rodLastTargetStatus] = $this->buildRodLastTargetUiState($state);
         $needWeeklyRod = $rodAutoMode
             && $weeklyWindow
             && $rodAllowedByTemp
@@ -683,7 +685,8 @@ class PVRegelung extends IPSModule
             'wbA' => $wbA,
             'remainingW' => $remainingW,
             'weeklyRodActive' => $needWeeklyRod ? 1 : 0,
-            'rodDaysSinceTargetActual' => $rodDaysSinceTargetActual,
+            'rodDaysSinceTargetActual' => $rodDaysDisplay,
+            'rodLastTargetStatus' => $rodLastTargetStatus,
             'restSurplusW' => $restSurplusW,
             'manualActive' => 0,
             'manualRodOn' => $rodManualOn ? 1 : 0,
@@ -1289,6 +1292,7 @@ class PVRegelung extends IPSModule
         $this->ensureProfileInt('PV_A', ' A', 0, 0, 0, 1);
         $this->ensureProfileInt('PV_WI', ' W', 0, 0, 22000, 100);
         $this->ensureProfileInt('PV_DAYS_1_20', ' Tage', 0, 1, 20, 1);
+        $this->ensureProfileFloat('PV_DAYS_F', ' Tage', 2, 0.0, 0.0, 0.01);
         $this->ensureProfileInt('PV_STAGE', '', 0, 0, 3, 1);
 
         $root = $this->ensureCategoryByIdent($this->InstanceID, 'pv_ui_root', (string)($CFG['ui']['root_name'] ?? 'PV Regelung'));
@@ -1350,7 +1354,8 @@ class PVRegelung extends IPSModule
         if (!$hadDaysVar) {
             SetValue((int)$daysId, max(1, min(20, (int)$CFG['heating_rod']['weekly']['days_after_target_reached'])));
         }
-        $this->ensureVariableByIdent($cHeat, 'pv_dbg_rod_days_since_target_actual', 'Vergangene Tage seit letzter Solltemperatur', 2, '~Float');
+        $this->ensureVariableByIdent($cHeat, 'pv_dbg_rod_days_since_target_actual', 'Vergangene Tage seit letzter Solltemperatur', 2, 'PV_DAYS_F');
+        $this->ensureVariableByIdent($cHeat, 'pv_dbg_rod_last_target_status', 'Status letzte Solltemperatur', 3, '');
         $this->ensureVariableByIdent($cHeat, 'pv_dbg_weekly_active', 'Weekly Heizstab aktiv', 0, '~Switch');
         $this->ensureVariableByIdent($cHeat, 'pv_dbg_hp_on', 'Wärmepumpe an', 0, '~Switch');
         $this->ensureVariableByIdent($cHeat, 'pv_dbg_rod_on', 'Heizstab aktiv', 0, '~Switch');
@@ -1397,6 +1402,7 @@ class PVRegelung extends IPSModule
         if (isset($v['boilerTargetC'])) $this->setVarByIdent($cHeat, 'pv_boiler_target_c', (float)$v['boilerTargetC']);
         if (isset($v['rodDaysSinceTarget'])) $this->setVarByIdent($cHeat, 'pv_rod_days_since_target', max(1, min(20, (int)$v['rodDaysSinceTarget'])));
         if (isset($v['rodDaysSinceTargetActual'])) $this->setVarByIdent($cHeat, 'pv_dbg_rod_days_since_target_actual', max(0.0, (float)$v['rodDaysSinceTargetActual']));
+        if (isset($v['rodLastTargetStatus'])) $this->setVarByIdent($cHeat, 'pv_dbg_rod_last_target_status', (string)$v['rodLastTargetStatus']);
 
         if (isset($v['wallboxChargeW'])) $this->setVarByIdent($cWb, 'pv_wb_power_kw', $this->wToKw((float)$v['wallboxChargeW']));
         if (isset($v['wbA'])) $this->setVarByIdent($cWb, 'pv_wb_target_a', (int)$v['wbA']);
@@ -1605,6 +1611,17 @@ class PVRegelung extends IPSModule
         }
 
         return max(0.0, (time() - $lastReached) / 86400.0);
+    }
+
+    private function buildRodLastTargetUiState(array $state): array
+    {
+        $lastReached = (int)($state['rod_last_target_reached_ts'] ?? 0);
+        if ($lastReached <= 0) {
+            return [0.0, 'Noch nie erreicht'];
+        }
+
+        $days = max(0.0, (time() - $lastReached) / 86400.0);
+        return [$days, 'Zuletzt erreicht: ' . date('d.m.Y H:i', $lastReached)];
     }
 
     private function maxHeatingRodStage(array $CFG): int
