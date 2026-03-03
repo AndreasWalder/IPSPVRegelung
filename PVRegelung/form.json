@@ -401,7 +401,7 @@
                 {
                     "type": "SelectVariable",
                     "name": "WallboxCarConnectedVarID",
-                    "caption": "Fahrzeug angesteckt / Status (optional)"
+                    "caption": "Status (WallBox/go-eCharger, Integer > 1 = Fahrzeug)"
                 },
                 {
                     "type": "SelectVariable",
