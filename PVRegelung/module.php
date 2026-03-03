@@ -68,6 +68,9 @@ declare(strict_types=1);
  *                  vom aktuellen SOC; das manuelle Laden wird nicht mehr sofort wegen Ziel-SOC blockiert.
  * 2026-03-01: v1.35 — Zwei kurze Live-Textausgaben ergänzt: "Aktuelle Entscheidung" und
  *                  "Nächste Tendenz" zur besseren Nachvollziehbarkeit der Regelung.
+ * 2026-03-03: v1.36 — Wallbox optional mit „Fahrzeug angesteckt“-Signal:
+ *                  Wenn kein Fahrzeug erkannt wird, bleibt Wallbox AUS und der Überschuss steht anderen
+ *                  Verbrauchern (z. B. Heizstab) zur Verfügung.
  */
 
 class PVRegelung extends IPSModule
@@ -144,6 +147,8 @@ class PVRegelung extends IPSModule
         $this->RegisterPropertyInteger('WallboxChargePowerVarID', 23401);
         $this->RegisterPropertyString('WallboxChargePowerUnit', 'kW');
         $this->RegisterPropertyInteger('WallboxSetCurrentAVarID', 56376);
+        $this->RegisterPropertyInteger('WallboxCarConnectedVarID', 0);
+        $this->RegisterPropertyBoolean('WallboxCarConnectedTrueMeansConnected', true);
 
         $this->RegisterPropertyInteger('WallboxPhase1pVarID', 19401);
         $this->RegisterPropertyBoolean('WallboxPhaseTrueIs1p', true);
@@ -331,6 +336,8 @@ class PVRegelung extends IPSModule
                 'enable_var' => (int)$this->ReadPropertyInteger('WallboxEnableVarID'),
                 'charge_power' => ['id' => (int)$this->ReadPropertyInteger('WallboxChargePowerVarID'), 'unit' => (string)$this->ReadPropertyString('WallboxChargePowerUnit')],
                 'set_current_a_var' => (int)$this->ReadPropertyInteger('WallboxSetCurrentAVarID'),
+                'car_connected_var' => (int)$this->ReadPropertyInteger('WallboxCarConnectedVarID'),
+                'car_connected_true_means_connected' => (bool)$this->ReadPropertyBoolean('WallboxCarConnectedTrueMeansConnected'),
                 'phase_1p_var' => (int)$this->ReadPropertyInteger('WallboxPhase1pVarID'),
                 'phase_true_is_1p' => (bool)$this->ReadPropertyBoolean('WallboxPhaseTrueIs1p'),
                 'phase_min_hold_seconds' => (int)$this->ReadPropertyInteger('WallboxPhaseMinHoldSeconds'),
@@ -725,6 +732,12 @@ class PVRegelung extends IPSModule
     {
         if (!($CFG['wallbox']['enabled'] ?? false)) return [false, 0, $state];
 
+        if (!$this->isWallboxCarConnected($CFG)) {
+            $state['wb_start_surplus_since_ts'] = 0;
+            $state['wb_deficit_since_ts'] = 0;
+            return [false, 0, $state];
+        }
+
         $enableVar = (int)($CFG['wallbox']['enable_var'] ?? 0);
         if ($enableVar <= 0) return [false, 0, $state];
 
@@ -998,6 +1011,10 @@ class PVRegelung extends IPSModule
     {
         if (!($CFG['wallbox']['enabled'] ?? false)) return [false, 0, $state];
 
+        if (!$this->isWallboxCarConnected($CFG)) {
+            return [false, 0, $state];
+        }
+
         $enableVar = (int)($CFG['wallbox']['enable_var'] ?? 0);
         $setA = (int)($CFG['wallbox']['set_current_a_var'] ?? 0);
         if ($enableVar <= 0 || $setA <= 0) return [false, 0, $state];
@@ -1057,6 +1074,18 @@ class PVRegelung extends IPSModule
             $state['hp_is_on'] = false;
             $state['hp_last_off_ts'] = $now;
         }
+    }
+
+    private function isWallboxCarConnected(array $CFG): bool
+    {
+        $varId = (int)($CFG['wallbox']['car_connected_var'] ?? 0);
+        if ($varId <= 0 || !@IPS_VariableExists($varId)) {
+            return true;
+        }
+
+        $trueMeansConnected = (bool)($CFG['wallbox']['car_connected_true_means_connected'] ?? true);
+        $value = (bool)$this->readVar($varId, false);
+        return $trueMeansConnected ? $value : !$value;
     }
 
     private function applyHeatingRodStage(array $CFG, array &$state, int $stage): void
