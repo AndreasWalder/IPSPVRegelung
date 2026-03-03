@@ -168,6 +168,9 @@ Zusätzlich können Sie den Loop manuell starten oder den internen Zustand zurü
   - Gemessene aktuelle Ladeleistung.
 - **WallboxSetCurrentAVarID** (int)
   - Soll-Ladestrom in Ampere.
+- **WallboxCarConnectedVarID** (int, optional)
+  - go-eCharger-Status als Integer. Nur dieser Status wird für „Fahrzeug angesteckt“ verwendet.
+  - Auswertung: `Status > 1` = Fahrzeug erkannt, sonst kein Fahrzeug.
 
 #### 8.1 Phasenumschaltung (1P/3P)
 - **WallboxPhase1pVarID** (int)

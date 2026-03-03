@@ -75,6 +75,8 @@ declare(strict_types=1);
  *                  go-eCharger-Status (Integer) unterstützt. Integer > 1 gilt als Fahrzeug erkannt.
  * 2026-03-03: v1.38 — Option "Bool true bedeutet Fahrzeug angesteckt" entfernt.
  *                  Bool wird nun immer direkt ausgewertet (true=angesteckt), Integer-Status bleibt >1.
+ * 2026-03-03: v1.39 — Fahrzeugerkennung Wallbox nur noch über Status-Integer:
+ *                  konfigurierter Wert muss Integer sein, Fahrzeug gilt bei Status > 1 als angesteckt.
  */
 
 class PVRegelung extends IPSModule
@@ -1087,13 +1089,13 @@ class PVRegelung extends IPSModule
 
         $var = @IPS_GetVariable($varId);
         $varType = (int)($var['VariableType'] ?? 0);
-
-        if ($varType === VARIABLETYPE_INTEGER) {
-            $status = (int)$this->readVar($varId, 0);
-            return $status > 1;
+        if ($varType !== VARIABLETYPE_INTEGER) {
+            $this->SendDebug('WallboxCarConnected', 'Variable ist nicht vom Typ Integer (Status erwartet).', 0);
+            return false;
         }
 
-        return (bool)$this->readVar($varId, false);
+        $status = (int)$this->readVar($varId, 0);
+        return $status > 1;
     }
 
     private function applyHeatingRodStage(array $CFG, array &$state, int $stage): void
