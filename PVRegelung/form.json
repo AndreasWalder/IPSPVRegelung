@@ -401,12 +401,12 @@
                 {
                     "type": "SelectVariable",
                     "name": "WallboxCarConnectedVarID",
-                    "caption": "Fahrzeug angesteckt Bool (optional)"
+                    "caption": "Fahrzeug angesteckt / Status (optional)"
                 },
                 {
                     "type": "CheckBox",
                     "name": "WallboxCarConnectedTrueMeansConnected",
-                    "caption": "Bool true bedeutet Fahrzeug angesteckt"
+                    "caption": "Nur bei Bool: true bedeutet Fahrzeug angesteckt"
                 },
                 {
                     "type": "SelectVariable",

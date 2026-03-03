@@ -71,6 +71,8 @@ declare(strict_types=1);
  * 2026-03-03: v1.36 — Wallbox optional mit „Fahrzeug angesteckt“-Signal:
  *                  Wenn kein Fahrzeug erkannt wird, bleibt Wallbox AUS und der Überschuss steht anderen
  *                  Verbrauchern (z. B. Heizstab) zur Verfügung.
+ * 2026-03-03: v1.37 — Wallbox Fahrzeugerkennung erweitert: Neben Bool wird jetzt auch ein
+ *                  go-eCharger-Status (Integer) unterstützt. Integer > 1 gilt als Fahrzeug erkannt.
  */
 
 class PVRegelung extends IPSModule
@@ -1081,6 +1083,14 @@ class PVRegelung extends IPSModule
         $varId = (int)($CFG['wallbox']['car_connected_var'] ?? 0);
         if ($varId <= 0 || !@IPS_VariableExists($varId)) {
             return true;
+        }
+
+        $var = @IPS_GetVariable($varId);
+        $varType = (int)($var['VariableType'] ?? 0);
+
+        if ($varType === VARIABLETYPE_INTEGER) {
+            $status = (int)$this->readVar($varId, 0);
+            return $status > 1;
         }
 
         $trueMeansConnected = (bool)($CFG['wallbox']['car_connected_true_means_connected'] ?? true);
