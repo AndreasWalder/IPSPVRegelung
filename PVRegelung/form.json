@@ -492,6 +492,26 @@
                 },
                 {
                     "type": "NumberSpinner",
+                    "name": "WallboxBlockBatteryDischargeW",
+                    "caption": "Wallbox bei Akku-Entladung abregeln ab (W)",
+                    "minimum": 0,
+                    "maximum": 20000
+                },
+                {
+                    "type": "CheckBox",
+                    "name": "WallboxUseBatteryChargeSurplus",
+                    "caption": "Batterieladung als freien Überschuss für Wallbox nutzen"
+                },
+                {
+                    "type": "NumberSpinner",
+                    "name": "WallboxUseBatteryChargeSurplusAboveSoc",
+                    "caption": "... aber erst ab Batterie-SOC (%)",
+                    "digits": 1,
+                    "minimum": 0,
+                    "maximum": 100
+                },
+                {
+                    "type": "NumberSpinner",
                     "name": "WallboxControlMinHoldSeconds",
                     "caption": "Wallbox Regel-Haltezeit (s)",
                     "minimum": 0,
