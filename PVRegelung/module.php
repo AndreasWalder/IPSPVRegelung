@@ -81,6 +81,9 @@ declare(strict_types=1);
  *                  • Akku-Entladung kann die Wallbox jetzt aktiv ausbremsen/verhindern
  *                  • Batterieladung kann optional als freier PV-Überschuss für die Wallbox verwendet werden
  *                    (konservativ erst ab hohem SOC), damit vorhandener Überschuss nicht halbiert wirkt.
+ * 2026-03-24: v1.41 — Wallbox-Sollwert nutzt im laufenden Betrieb wieder „Export + aktuelle WB-Istleistung“.
+ *                  Dadurch regelt die Wallbox auf ~0 Einspeisung statt nur auf den reinen Exportwert
+ *                  und verschenkt bei stabilem Überschuss keine Leistung.
  */
 
 class PVRegelung extends IPSModule
@@ -858,14 +861,20 @@ class PVRegelung extends IPSModule
         $rampDown = max(1, (int)($CFG['wallbox']['ramp_down_a_per_loop'] ?? 2));
         $grace = max(0, (int)($CFG['wallbox']['soft_off_grace_seconds'] ?? 120));
 
-        $rawA = (int)floor($availableW / ($voltage * $phases));
-        $targetA = (int)(floor($rawA / $step) * $step);
-        $targetA = max(0, min($maxA, $targetA));
-
         $isOn = (bool)($state['wb_is_on'] ?? false);
         $lastOn  = (int)($state['wb_last_on_ts'] ?? 0);
         $lastOff = (int)($state['wb_last_off_ts'] ?? 0);
         $now = time();
+
+        $availableControlW = $availableW;
+        if ($isOn) {
+            $wbCurrentPowerW = max(0.0, $this->readPowerToW($CFG['wallbox']['charge_power']));
+            $availableControlW += $wbCurrentPowerW;
+        }
+
+        $rawA = (int)floor($availableControlW / ($voltage * $phases));
+        $targetA = (int)(floor($rawA / $step) * $step);
+        $targetA = max(0, min($maxA, $targetA));
 
         $canTurnOn  = (!$isOn) && (($now - $lastOff) >= (int)($CFG['wallbox']['min_off_seconds'] ?? 120));
         $canTurnOff = ($isOn)  && (($now - $lastOn)  >= (int)($CFG['wallbox']['min_on_seconds'] ?? 180));

@@ -219,6 +219,8 @@ Zusätzlich können Sie den Loop manuell starten oder den internen Zustand zurü
   - Konservativ halten (z. B. 95 %), damit die Batterie im normalen Ladebereich weiter Vorrang behält.
 - **WallboxControlMinHoldSeconds** (int, s)
   - Mindesthaltezeit zwischen Wallbox-Regeländerungen (z. B. 45 s).
+  - Hinweis: Im laufenden Betrieb regelt die Wallbox auf Basis von `Einspeisung + aktueller Wallbox-Istleistung`,
+    damit sie bei stabilem PV-Überschuss auf ~0 Einspeisung ausregeln kann (statt künstlich auf halber Leistung zu bleiben).
 - **WallboxAutoStartMinSurplusW** (int, W)
   - Mindest-Überschuss für den automatischen Start der Wallbox (Standard: 2000 W).
 - **WallboxAutoStartMinDurationSeconds** (int, s)
