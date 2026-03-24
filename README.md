@@ -207,8 +207,20 @@ Zusätzlich können Sie den Loop manuell starten oder den internen Zustand zurü
   - Reserveleistung, die nicht vollständig verplant wird.
 - **WallboxSurplusHysteresisW** (int, W)
   - Hysterese für Leistungsanpassung/Start-Stopp der Wallbox (z. B. 500 W).
+- **WallboxBlockBatteryDischargeW** (int, W)
+  - Schutz gegen Akku-Entladung durch die Wallbox.
+  - Sobald die Batterie stärker als dieser Wert entlädt, wird die verfügbare Wallbox-Leistung entsprechend reduziert.
+  - Praktisch gegen das im Screenshot sichtbare Verhalten „Wallbox zieht aus dem Akku, obwohl kaum echter Überschuss da ist“.
+- **WallboxUseBatteryChargeSurplus** (bool)
+  - Optional: Aktuelle Batterieladung darf als zusätzlich freier Überschuss für die Wallbox verwendet werden.
+  - Sinnvoll, wenn der Akku bei fast vollem SOC noch PV-Leistung aufnimmt und die Wallbox sonst nur etwa „die Hälfte“ des vorhandenen Überschusses sieht.
+- **WallboxUseBatteryChargeSurplusAboveSoc** (float, %)
+  - SOC-Schwelle für die obige Freigabe.
+  - Konservativ halten (z. B. 95 %), damit die Batterie im normalen Ladebereich weiter Vorrang behält.
 - **WallboxControlMinHoldSeconds** (int, s)
   - Mindesthaltezeit zwischen Wallbox-Regeländerungen (z. B. 45 s).
+  - Hinweis: Im laufenden Betrieb regelt die Wallbox auf Basis von `Einspeisung + aktueller Wallbox-Istleistung`,
+    damit sie bei stabilem PV-Überschuss auf ~0 Einspeisung ausregeln kann (statt künstlich auf halber Leistung zu bleiben).
 - **WallboxAutoStartMinSurplusW** (int, W)
   - Mindest-Überschuss für den automatischen Start der Wallbox (Standard: 2000 W).
 - **WallboxAutoStartMinDurationSeconds** (int, s)

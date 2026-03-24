@@ -77,6 +77,13 @@ declare(strict_types=1);
  *                  Bool wird nun immer direkt ausgewertet (true=angesteckt), Integer-Status bleibt >1.
  * 2026-03-03: v1.39 — Fahrzeugerkennung Wallbox nur noch über Status-Integer:
  *                  konfigurierter Wert muss Integer sein, Fahrzeug gilt bei Status > 1 als angesteckt.
+ * 2026-03-21: v1.40 — Wallbox gezielt entschärft:
+ *                  • Akku-Entladung kann die Wallbox jetzt aktiv ausbremsen/verhindern
+ *                  • Batterieladung kann optional als freier PV-Überschuss für die Wallbox verwendet werden
+ *                    (konservativ erst ab hohem SOC), damit vorhandener Überschuss nicht halbiert wirkt.
+ * 2026-03-24: v1.41 — Wallbox-Sollwert nutzt im laufenden Betrieb wieder „Export + aktuelle WB-Istleistung“.
+ *                  Dadurch regelt die Wallbox auf ~0 Einspeisung statt nur auf den reinen Exportwert
+ *                  und verschenkt bei stabilem Überschuss keine Leistung.
  */
 
 class PVRegelung extends IPSModule
@@ -172,6 +179,9 @@ class PVRegelung extends IPSModule
         $this->RegisterPropertyInteger('WallboxMinOffSeconds', 120);
         $this->RegisterPropertyInteger('WallboxReserveW', 200);
         $this->RegisterPropertyInteger('WallboxSurplusHysteresisW', 500);
+        $this->RegisterPropertyInteger('WallboxBlockBatteryDischargeW', 300);
+        $this->RegisterPropertyBoolean('WallboxUseBatteryChargeSurplus', true);
+        $this->RegisterPropertyFloat('WallboxUseBatteryChargeSurplusAboveSoc', 95.0);
         $this->RegisterPropertyInteger('WallboxAutoStartMinSurplusW', 2000);
         $this->RegisterPropertyInteger('WallboxAutoStartMinDurationSeconds', 900);
         $this->RegisterPropertyInteger('WallboxControlMinHoldSeconds', 45);
@@ -404,6 +414,9 @@ class PVRegelung extends IPSModule
                 'min_off_seconds' => (int)$this->ReadPropertyInteger('WallboxMinOffSeconds'),
                 'reserve_w' => (int)$this->ReadPropertyInteger('WallboxReserveW'),
                 'surplus_hysteresis_w' => (int)$this->ReadPropertyInteger('WallboxSurplusHysteresisW'),
+                'block_battery_discharge_w' => (int)$this->ReadPropertyInteger('WallboxBlockBatteryDischargeW'),
+                'use_battery_charge_surplus' => (bool)$this->ReadPropertyBoolean('WallboxUseBatteryChargeSurplus'),
+                'use_battery_charge_surplus_above_soc' => (float)$this->ReadPropertyFloat('WallboxUseBatteryChargeSurplusAboveSoc'),
                 'auto_start_min_surplus_w' => (int)$this->ReadPropertyInteger('WallboxAutoStartMinSurplusW'),
                 'auto_start_min_duration_seconds' => (int)$this->ReadPropertyInteger('WallboxAutoStartMinDurationSeconds'),
                 'control_min_hold_seconds' => (int)$this->ReadPropertyInteger('WallboxControlMinHoldSeconds'),
@@ -577,6 +590,9 @@ class PVRegelung extends IPSModule
         // dass sich der Regler bei wenig/keinem Überschuss selbst "am Leben"
         // gehalten hat und unnötig Netzbezug bestehen blieb.
         $availableBeforeWBW = $exportW;
+        $batteryWallboxAssistW = $this->batteryChargeAssistForWallboxW($CFG, $soc, $battPowerW);
+        $batteryWallboxPenaltyW = $this->batteryDischargePenaltyForWallboxW($CFG, $battPowerW);
+        $wallboxAvailableBeforeWBW = max(0.0, $availableBeforeWBW + $batteryWallboxAssistW - $batteryWallboxPenaltyW);
         $remainingW = $availableBeforeWBW;
 
         $hpOn = false;
@@ -586,7 +602,7 @@ class PVRegelung extends IPSModule
         [$rodDaysDisplay, $rodLastTargetStatus] = $this->buildRodLastTargetUiState($state);
 
         if ($exportW < $deadband && !$rodManualOn) {
-            [$wbOn, $wbA, $state] = $this->planWallboxRamped($CFG, $state, $remainingW);
+            [$wbOn, $wbA, $state] = $this->planWallboxRamped($CFG, $state, $wallboxAvailableBeforeWBW);
 
             $this->applyHeatpump($CFG, $state, false);
             $this->applyHeatingRodStage($CFG, $state, 0);
@@ -594,7 +610,7 @@ class PVRegelung extends IPSModule
 
             $wbTargetW = $this->wallboxPowerFromA($CFG, $state, $wbA);
             $reserveW = (float)($CFG['wallbox']['reserve_w'] ?? 0.0);
-            $restSurplusW = max(0.0, $availableBeforeWBW - $wbTargetW - $reserveW);
+            $restSurplusW = max(0.0, $wallboxAvailableBeforeWBW - $wbTargetW - $reserveW);
             [$decisionText, $forecastText, $detailsText] = $this->buildDecisionTexts([
                 'mode' => 'low_surplus',
                 'exportW' => $exportW,
@@ -655,7 +671,8 @@ class PVRegelung extends IPSModule
 
         $rodOn = $rodStage > 0;
 
-        [$wbOn, $wbA, $state] = $this->planWallboxRamped($CFG, $state, $remainingW);
+        $wallboxAvailableAfterPriorityW = max(0.0, $remainingW + $batteryWallboxAssistW - $batteryWallboxPenaltyW);
+        [$wbOn, $wbA, $state] = $this->planWallboxRamped($CFG, $state, $wallboxAvailableAfterPriorityW);
 
         $this->applyHeatpump($CFG, $state, $hpOn);
         $this->applyHeatingRodStage($CFG, $state, $rodStage);
@@ -666,7 +683,7 @@ class PVRegelung extends IPSModule
         $wbTargetW = $this->wallboxPowerFromA($CFG, $state, $wbA);
         $reserveW = (float)($CFG['wallbox']['reserve_w'] ?? 0.0);
 
-        $restSurplusW = max(0.0, $availableBeforeWBW - $hpUsedW - $rodUsedW - $wbTargetW - $reserveW);
+        $restSurplusW = max(0.0, $wallboxAvailableAfterPriorityW - $wbTargetW - $reserveW);
         [$decisionText, $forecastText, $detailsText] = $this->buildDecisionTexts([
             'mode' => 'auto',
             'hpOn' => $hpOn,
@@ -844,14 +861,20 @@ class PVRegelung extends IPSModule
         $rampDown = max(1, (int)($CFG['wallbox']['ramp_down_a_per_loop'] ?? 2));
         $grace = max(0, (int)($CFG['wallbox']['soft_off_grace_seconds'] ?? 120));
 
-        $rawA = (int)floor($availableW / ($voltage * $phases));
-        $targetA = (int)(floor($rawA / $step) * $step);
-        $targetA = max(0, min($maxA, $targetA));
-
         $isOn = (bool)($state['wb_is_on'] ?? false);
         $lastOn  = (int)($state['wb_last_on_ts'] ?? 0);
         $lastOff = (int)($state['wb_last_off_ts'] ?? 0);
         $now = time();
+
+        $availableControlW = $availableW;
+        if ($isOn) {
+            $wbCurrentPowerW = max(0.0, $this->readPowerToW($CFG['wallbox']['charge_power']));
+            $availableControlW += $wbCurrentPowerW;
+        }
+
+        $rawA = (int)floor($availableControlW / ($voltage * $phases));
+        $targetA = (int)(floor($rawA / $step) * $step);
+        $targetA = max(0, min($maxA, $targetA));
 
         $canTurnOn  = (!$isOn) && (($now - $lastOff) >= (int)($CFG['wallbox']['min_off_seconds'] ?? 120));
         $canTurnOff = ($isOn)  && (($now - $lastOn)  >= (int)($CFG['wallbox']['min_on_seconds'] ?? 180));
@@ -1056,6 +1079,35 @@ class PVRegelung extends IPSModule
         if ($target > $current) return min($target, $current + $upStep);
         if ($target < $current) return max($target, $current - $downStep);
         return $current;
+    }
+
+    private function batteryChargeAssistForWallboxW(array $CFG, float $soc, float $battPowerW): float
+    {
+        if (!((bool)($CFG['wallbox']['use_battery_charge_surplus'] ?? false))) {
+            return 0.0;
+        }
+
+        $minSoc = max(0.0, min(100.0, (float)($CFG['wallbox']['use_battery_charge_surplus_above_soc'] ?? 95.0)));
+        if ($soc < $minSoc) {
+            return 0.0;
+        }
+
+        return max(0.0, $battPowerW);
+    }
+
+    private function batteryDischargePenaltyForWallboxW(array $CFG, float $battPowerW): float
+    {
+        $thresholdW = max(0.0, (float)($CFG['wallbox']['block_battery_discharge_w'] ?? 0.0));
+        if ($thresholdW <= 0.0) {
+            return 0.0;
+        }
+
+        $dischargeW = max(0.0, -$battPowerW);
+        if ($dischargeW <= $thresholdW) {
+            return 0.0;
+        }
+
+        return $dischargeW;
     }
 
     private function wallboxPowerFromA(array $CFG, array $state, int $amps): float
