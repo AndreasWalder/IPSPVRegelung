@@ -84,6 +84,11 @@ declare(strict_types=1);
  * 2026-03-24: v1.41 — Wallbox-Sollwert nutzt im laufenden Betrieb wieder „Export + aktuelle WB-Istleistung“.
  *                  Dadurch regelt die Wallbox auf ~0 Einspeisung statt nur auf den reinen Exportwert
  *                  und verschenkt bei stabilem Überschuss keine Leistung.
+ * 2026-03-25: v1.42 — Wallbox PV-Priorisierung verschärft:
+ *                  • Kein Wallbox-Zuschlag mehr aus Batterieladung
+ *                  • Batterie-Entladung wird bereits ab >0 W konsequent geblockt
+ *                  • Bei eindeutig genügend PV-Leistung wird direkt auf Maximalstrom geregelt
+ *                  • Entscheidungstexte nennen explizit Netz-/Akku-Status als Begründung
  */
 
 class PVRegelung extends IPSModule
@@ -620,6 +625,8 @@ class PVRegelung extends IPSModule
                 'hpOn' => false,
                 'rodStage' => 0,
                 'wbOn' => $wbOn,
+                'importW' => $importW,
+                'batteryPowerW' => $battPowerW,
             ]);
 
             $this->updateUiVars($CFG, [
@@ -692,6 +699,8 @@ class PVRegelung extends IPSModule
             'wbA' => $wbA,
             'remainingW' => $remainingW,
             'carConnected' => $carConnected,
+            'importW' => $importW,
+            'batteryPowerW' => $battPowerW,
         ]);
 
         $this->updateUiVars($CFG, [
@@ -929,6 +938,9 @@ class PVRegelung extends IPSModule
             $newA = $canChangeControl
                 ? $this->moveTowardsInt($curA, $desiredA, $rampUp, $rampDown)
                 : $curA;
+            if ($canChangeControl && $desiredA >= $maxA) {
+                $newA = $maxA;
+            }
 
             if ($newA !== $curA) {
                 $state['wb_last_control_change_ts'] = $now;
@@ -1083,30 +1095,12 @@ class PVRegelung extends IPSModule
 
     private function batteryChargeAssistForWallboxW(array $CFG, float $soc, float $battPowerW): float
     {
-        if (!((bool)($CFG['wallbox']['use_battery_charge_surplus'] ?? false))) {
-            return 0.0;
-        }
-
-        $minSoc = max(0.0, min(100.0, (float)($CFG['wallbox']['use_battery_charge_surplus_above_soc'] ?? 95.0)));
-        if ($soc < $minSoc) {
-            return 0.0;
-        }
-
-        return max(0.0, $battPowerW);
+        return 0.0;
     }
 
     private function batteryDischargePenaltyForWallboxW(array $CFG, float $battPowerW): float
     {
-        $thresholdW = max(0.0, (float)($CFG['wallbox']['block_battery_discharge_w'] ?? 0.0));
-        if ($thresholdW <= 0.0) {
-            return 0.0;
-        }
-
         $dischargeW = max(0.0, -$battPowerW);
-        if ($dischargeW <= $thresholdW) {
-            return 0.0;
-        }
-
         return $dischargeW;
     }
 
@@ -1490,6 +1484,14 @@ class PVRegelung extends IPSModule
     {
         $mode = (string)($ctx['mode'] ?? 'auto');
         $carConnected = (bool)($ctx['carConnected'] ?? true);
+        $importW = max(0.0, (float)($ctx['importW'] ?? 0.0));
+        $batteryPowerW = (float)($ctx['batteryPowerW'] ?? 0.0);
+        $batteryDischargeW = max(0.0, -$batteryPowerW);
+        $gridBatteryHint = sprintf(
+            '• Netz/Akku-Schutz: Netzbezug %.2f kW, Akku-Entladung %.2f kW. Wallbox nutzt nur echten PV-Überschuss.',
+            $importW / 1000.0,
+            $batteryDischargeW / 1000.0
+        );
 
         $hpOn = (bool)($ctx['hpOn'] ?? false);
         $rodStage = max(0, (int)($ctx['rodStage'] ?? 0));
@@ -1571,6 +1573,7 @@ class PVRegelung extends IPSModule
                 $carConnected
                     ? sprintf('• Wallbox: %s%s.', $wbOn ? 'EIN' : 'AUS', $wbOn ? (' (' . $wbA . ' A, sanfte Regelung)') : '')
                     : '• Wallbox: AUS (kein Fahrzeug angesteckt).',
+                $gridBatteryHint,
             ]);
 
             return [$decision, $forecast, $details];
@@ -1596,6 +1599,7 @@ class PVRegelung extends IPSModule
                 ? sprintf('• Wallbox: %s%s.', $wbOn ? 'EIN' : 'AUS', $wbOn ? (' (' . $wbA . ' A)') : '')
                 : '• Wallbox: AUS (kein Fahrzeug angesteckt).',
             sprintf('• Rest-Überschuss nach Planung: %.2f kW.', $remainingKw),
+            $gridBatteryHint,
         ]);
 
         return [$decision, $forecast, $details];
