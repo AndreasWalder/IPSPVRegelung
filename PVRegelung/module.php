@@ -680,6 +680,7 @@ class PVRegelung extends IPSModule
             [$rodStage, $remainingW] = $this->planHeatingRodStage($CFG, $state, $needWeeklyRod, $boilerTemp, $remainingW);
         }
 
+        $rodOn = $rodStage > 0;
         $wallboxAvailableAfterPriorityW = max(0.0, $remainingW + $batteryWallboxAssistW - $batteryWallboxPenaltyW);
         [$wbPreviewOn] = $this->planWallboxRamped($CFG, $state, $wallboxAvailableAfterPriorityW);
         $wallboxHasPriority = $carConnected && $wbPreviewOn;
@@ -693,6 +694,14 @@ class PVRegelung extends IPSModule
         } else {
             $rodOn = $rodStage > 0;
             [$wbOn, $wbA, $state] = $this->planWallboxRamped($CFG, $state, $wallboxAvailableAfterPriorityW);
+        }
+
+        if ($carConnected && $wbOn && $rodStage > 0) {
+            $remainingW = max(0.0, $remainingW + $this->heatingRodPowerForStageW($CFG, $rodStage));
+            $wallboxAvailableAfterPriorityW = max(0.0, $remainingW + $batteryWallboxAssistW - $batteryWallboxPenaltyW);
+            [$wbOn, $wbA, $state] = $this->planWallboxRamped($CFG, $state, $wallboxAvailableAfterPriorityW);
+            $rodStage = 0;
+            $rodOn = false;
         }
 
         $this->applyHeatpump($CFG, $state, $hpOn);
