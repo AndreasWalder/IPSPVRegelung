@@ -119,6 +119,9 @@ declare(strict_types=1);
  * 2026-03-27: v1.51 — Wärmepumpen-Überschusssignal korrigiert:
  *                  • Heizstab-Leistung wird dort nicht mehr separat abgezogen,
  *                    da sie bereits im Hausverbrauch enthalten ist.
+ * 2026-03-27: v1.52 — Rest-Überschuss-Anzeigen korrigiert:
+ *                  • Bei allen Rest-Überschuss-Werten wird die Heizstab-Leistung
+ *                    nicht mehr abgezogen, da sie bereits im Hausverbrauch steckt.
  */
 
 class PVRegelung extends IPSModule
@@ -764,14 +767,16 @@ class PVRegelung extends IPSModule
         $wbCurrentPowerW = ($wbOn || (bool)($state['wb_is_on'] ?? false))
             ? max(0.0, $this->readPowerToW($CFG['wallbox']['charge_power']))
             : 0.0;
-        $restSurplusW = max(0.0, $wallboxAvailableAfterPriorityW + $wbCurrentPowerW - $wbTargetW - $reserveW);
+        $remainingDisplayW = max(0.0, $remainingW + $rodUsedW);
+        $wallboxAvailableDisplayW = max(0.0, $remainingDisplayW + $wbLiveReserveW + $batteryWallboxAssistW - $batteryWallboxPenaltyW);
+        $restSurplusW = max(0.0, $wallboxAvailableDisplayW + $wbCurrentPowerW - $wbTargetW - $reserveW);
         [$decisionText, $forecastText, $detailsText] = $this->buildDecisionTexts([
             'mode' => 'auto',
             'hpOn' => $hpOn,
             'rodStage' => $rodStage,
             'wbOn' => $wbOn,
             'wbA' => $wbA,
-            'remainingW' => $remainingW,
+            'remainingW' => $remainingDisplayW,
             'restSurplusW' => $restSurplusW,
             'carConnected' => $carConnected,
             'importW' => $importW,
@@ -784,7 +789,7 @@ class PVRegelung extends IPSModule
             'rodStage' => $rodStage,
             'wbOn' => $wbOn ? 1 : 0,
             'wbA' => $wbA,
-            'remainingW' => $remainingW,
+            'remainingW' => $remainingDisplayW,
             'weeklyRodActive' => $needWeeklyRod ? 1 : 0,
             'rodDaysSinceTargetActual' => $rodDaysDisplay,
             'rodLastTargetStatus' => $rodLastTargetStatus,
