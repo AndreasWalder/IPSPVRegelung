@@ -99,6 +99,10 @@ declare(strict_types=1);
  * 2026-03-27: v1.45 — Rest-Überschuss/Tendenz korrigiert:
  *                  • Für die Rest-/Tendenz-Anzeige wird bei laufender Wallbox wieder die aktuelle
  *                    WB-Istleistung berücksichtigt, damit freie Rampenreserve sichtbar bleibt.
+ * 2026-03-27: v1.46 — Wallbox-Regelung nutzt Rest-Überschuss als Zusatzreserve:
+ *                  • Positiver Rest-Überschuss aus dem vorherigen Zyklus wird der
+ *                    nächsten Wallbox-Sollwertplanung zugeschlagen, damit bei
+ *                    vorhandener Rampenreserve nicht unnötig heruntergeregelt wird.
  */
 
 class PVRegelung extends IPSModule
@@ -563,6 +567,7 @@ class PVRegelung extends IPSModule
                 'detailsText' => $detailsText,
             ]);
 
+            $state['wb_rest_surplus_w'] = 0.0;
             $this->saveState($state);
             return;
         }
@@ -594,6 +599,7 @@ class PVRegelung extends IPSModule
                 'forecastText' => $forecastText,
                 'detailsText' => $detailsText,
             ]);
+            $state['wb_rest_surplus_w'] = 0.0;
             $this->saveState($state);
             return;
         }
@@ -607,7 +613,8 @@ class PVRegelung extends IPSModule
         $availableBeforeWBW = $exportW;
         $batteryWallboxAssistW = $this->batteryChargeAssistForWallboxW($CFG, $soc, $battPowerW);
         $batteryWallboxPenaltyW = $this->batteryDischargePenaltyForWallboxW($CFG, $battPowerW);
-        $wallboxAvailableBeforeWBW = max(0.0, $availableBeforeWBW + $batteryWallboxAssistW - $batteryWallboxPenaltyW);
+        $restSurplusCarryW = max(0.0, (float)($state['wb_rest_surplus_w'] ?? 0.0));
+        $wallboxAvailableBeforeWBW = max(0.0, $availableBeforeWBW + $restSurplusCarryW + $batteryWallboxAssistW - $batteryWallboxPenaltyW);
         $remainingW = $availableBeforeWBW;
 
         $hpOn = false;
@@ -659,6 +666,7 @@ class PVRegelung extends IPSModule
                 'detailsText' => $detailsText,
             ]);
 
+            $state['wb_rest_surplus_w'] = $restSurplusW;
             $this->saveState($state);
             return;
         }
@@ -690,13 +698,13 @@ class PVRegelung extends IPSModule
         }
 
         $rodOn = $rodStage > 0;
-        $wallboxAvailableAfterPriorityW = max(0.0, $remainingW + $batteryWallboxAssistW - $batteryWallboxPenaltyW);
+        $wallboxAvailableAfterPriorityW = max(0.0, $remainingW + $restSurplusCarryW + $batteryWallboxAssistW - $batteryWallboxPenaltyW);
         [$wbPreviewOn] = $this->planWallboxRamped($CFG, $state, $wallboxAvailableAfterPriorityW);
         $wallboxHasPriority = $carConnected && $wbPreviewOn;
 
         if ($wallboxHasPriority) {
             $remainingW = max(0.0, $remainingW + $this->heatingRodPowerForStageW($CFG, $rodStage));
-            $wallboxAvailableAfterPriorityW = max(0.0, $remainingW + $batteryWallboxAssistW - $batteryWallboxPenaltyW);
+            $wallboxAvailableAfterPriorityW = max(0.0, $remainingW + $restSurplusCarryW + $batteryWallboxAssistW - $batteryWallboxPenaltyW);
             [$wbOn, $wbA, $state] = $this->planWallboxRamped($CFG, $state, $wallboxAvailableAfterPriorityW);
             $rodStage = 0;
             $rodOn = false;
@@ -707,7 +715,7 @@ class PVRegelung extends IPSModule
 
         if ($carConnected && $wbOn && $rodStage > 0) {
             $remainingW = max(0.0, $remainingW + $this->heatingRodPowerForStageW($CFG, $rodStage));
-            $wallboxAvailableAfterPriorityW = max(0.0, $remainingW + $batteryWallboxAssistW - $batteryWallboxPenaltyW);
+            $wallboxAvailableAfterPriorityW = max(0.0, $remainingW + $restSurplusCarryW + $batteryWallboxAssistW - $batteryWallboxPenaltyW);
             [$wbOn, $wbA, $state] = $this->planWallboxRamped($CFG, $state, $wallboxAvailableAfterPriorityW);
             $rodStage = 0;
             $rodOn = false;
@@ -757,6 +765,7 @@ class PVRegelung extends IPSModule
             'detailsText' => $detailsText,
         ]);
 
+        $state['wb_rest_surplus_w'] = $restSurplusW;
         $this->saveState($state);
     }
 
