@@ -113,6 +113,9 @@ declare(strict_types=1);
  * 2026-03-27: v1.49 — Wallbox-SOC-Abschaltung vereinheitlicht:
  *                  • Laden der Wallbox wird in manuellem UND automatischem Modus beendet,
  *                    sobald Auto SOC (Ist) >= Manuelles Ziel-SOC ist.
+ * 2026-03-27: v1.50 — Heizstab-Rampenlogik geglättet:
+ *                  • Heizstab fährt jetzt sowohl beim Hoch- als auch beim Herunterregeln
+ *                    maximal eine Stufe pro Zyklus.
  */
 
 class PVRegelung extends IPSModule
@@ -884,13 +887,21 @@ class PVRegelung extends IPSModule
             return [$currentStage, max(0.0, $availableW - $usedW)];
         }
 
-        $targetStage = min($maxStage, (int)floor($availableW / $powerPerStage));
+        $targetStageByPower = min($maxStage, (int)floor($availableW / $powerPerStage));
+        $targetStage = $targetStageByPower;
 
         if ($isOn) {
             $offThresholdW = max(0.0, $minSurplus - $surplusHyst);
             if ($availableW < $offThresholdW) {
                 $targetStage = max(0, $currentStage - 1);
             }
+        }
+
+        // Immer nur eine Stufe pro Zyklus hoch-/runterfahren.
+        if ($targetStage > $currentStage) {
+            $targetStage = min($currentStage + 1, $targetStage);
+        } elseif ($targetStage < $currentStage) {
+            $targetStage = max($currentStage - 1, $targetStage);
         }
 
         if ($targetStage <= 0) {
