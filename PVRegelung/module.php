@@ -125,6 +125,9 @@ declare(strict_types=1);
  * 2026-03-27: v1.53 — WP-Überschuss-Output mit Heizstab-Kompensation:
  *                  • Für den WP-Überschuss-Output werden je aktiver Heizstab-Stufe
  *                    zusätzlich 3 kW addiert.
+ * 2026-03-27: v1.54 — Rest-Überschuss-Transparenz erweitert:
+ *                  • Rest-Überschuss (Soll ~0) und Rest vor WB ohne 3-kW-Zuschlag.
+ *                  • Zusätzliche Rest-Variablen je Verbraucher ergänzt (nach WP, nach Heizstab, vor WB).
  */
 
 class PVRegelung extends IPSModule
@@ -579,6 +582,9 @@ class PVRegelung extends IPSModule
                 'remainingW' => 0,
                 'weeklyRodActive' => 0,
                 'restSurplusW' => 0.0,
+                'restAfterHpW' => 0.0,
+                'restAfterRodW' => 0.0,
+                'restBeforeWbW' => 0.0,
                 'manualActive' => 1,
                 'manualPowerW' => $manualPowerW,
                 'manualTargetSoc' => $manualTargetSoc,
@@ -614,6 +620,9 @@ class PVRegelung extends IPSModule
             ]);
             $this->updateUiVars($CFG, [
                 'restSurplusW' => 0.0,
+                'restAfterHpW' => 0.0,
+                'restAfterRodW' => 0.0,
+                'restBeforeWbW' => 0.0,
                 'rodOn' => $rodStageImport > 0 ? 1 : 0,
                 'rodStage' => $rodStageImport,
                 'weeklyRodActive' => 0,
@@ -691,6 +700,9 @@ class PVRegelung extends IPSModule
                 'rodDaysSinceTargetActual' => $rodDaysDisplay,
                 'rodLastTargetStatus' => $rodLastTargetStatus,
                 'restSurplusW' => $restSurplusW,
+                'restAfterHpW' => max(0.0, $exportW),
+                'restAfterRodW' => max(0.0, $exportW - $this->heatingRodPowerForStageW($CFG, $rodStageLowSurplus)),
+                'restBeforeWbW' => max(0.0, $remainingW),
                 'manualActive' => 0,
                 'decisionText' => $decisionText,
                 'forecastText' => $forecastText,
@@ -770,9 +782,10 @@ class PVRegelung extends IPSModule
         $wbCurrentPowerW = ($wbOn || (bool)($state['wb_is_on'] ?? false))
             ? max(0.0, $this->readPowerToW($CFG['wallbox']['charge_power']))
             : 0.0;
-        $remainingDisplayW = max(0.0, $remainingW + $rodUsedW);
-        $wallboxAvailableDisplayW = max(0.0, $remainingDisplayW + $wbLiveReserveW + $batteryWallboxAssistW - $batteryWallboxPenaltyW);
-        $restSurplusW = max(0.0, $wallboxAvailableDisplayW + $wbCurrentPowerW - $wbTargetW - $reserveW);
+        $restAfterHpW = max(0.0, $availableBeforeWBW - $hpUsedW);
+        $restAfterRodW = max(0.0, $restAfterHpW - $rodUsedW);
+        $restBeforeWbW = max(0.0, $remainingW);
+        $restSurplusW = max(0.0, $wallboxAvailableAfterPriorityW + $wbCurrentPowerW - $wbTargetW - $reserveW);
         [$decisionText, $forecastText, $detailsText] = $this->buildDecisionTexts([
             'mode' => 'auto',
             'hpOn' => $hpOn,
@@ -797,6 +810,9 @@ class PVRegelung extends IPSModule
             'rodDaysSinceTargetActual' => $rodDaysDisplay,
             'rodLastTargetStatus' => $rodLastTargetStatus,
             'restSurplusW' => $restSurplusW,
+            'restAfterHpW' => $restAfterHpW,
+            'restAfterRodW' => $restAfterRodW,
+            'restBeforeWbW' => $restBeforeWbW,
             'manualActive' => 0,
             'manualRodOn' => $rodManualOn ? 1 : 0,
             'decisionText' => $decisionText,
@@ -1491,6 +1507,9 @@ class PVRegelung extends IPSModule
         $this->ensureVariableByIdent($cSurp, 'pv_import_kw', 'Bezug', 2, 'PV_kW');
         $this->ensureVariableByIdent($cSurp, 'pv_export_kw', 'Einspeisung', 2, 'PV_kW');
         $this->ensureVariableByIdent($cSurp, 'pv_rest_kw', 'Rest-Überschuss (Soll ~0)', 2, 'PV_kW');
+        $this->ensureVariableByIdent($cSurp, 'pv_rest_after_hp_kw', 'Rest nach Wärmepumpe', 2, 'PV_kW');
+        $this->ensureVariableByIdent($cSurp, 'pv_rest_after_rod_kw', 'Rest nach Heizstab', 2, 'PV_kW');
+        $this->ensureVariableByIdent($cSurp, 'pv_rest_before_wb_kw', 'Rest vor Wallbox', 2, 'PV_kW');
 
         $this->ensureVariableByIdent($cLoad, 'pv_load_kw', 'Gebäudelast', 2, 'PV_kW');
         $this->ensureVariableByIdent($cLoad, 'pv_house_load_kw', 'Hausverbrauch (ohne WB/WP/Batt)', 2, 'PV_kW');
@@ -1573,6 +1592,9 @@ class PVRegelung extends IPSModule
         if (isset($v['importW']))   $this->setVarByIdent($cSurp, 'pv_import_kw', $this->wToKw((float)$v['importW']));
         if (isset($v['exportW']))   $this->setVarByIdent($cSurp, 'pv_export_kw', $this->wToKw((float)$v['exportW']));
         if (isset($v['restSurplusW'])) $this->setVarByIdent($cSurp, 'pv_rest_kw', $this->wToKw((float)$v['restSurplusW']));
+        if (isset($v['restAfterHpW'])) $this->setVarByIdent($cSurp, 'pv_rest_after_hp_kw', $this->wToKw((float)$v['restAfterHpW']));
+        if (isset($v['restAfterRodW'])) $this->setVarByIdent($cSurp, 'pv_rest_after_rod_kw', $this->wToKw((float)$v['restAfterRodW']));
+        if (isset($v['restBeforeWbW'])) $this->setVarByIdent($cSurp, 'pv_rest_before_wb_kw', $this->wToKw((float)$v['restBeforeWbW']));
 
         if (isset($v['buildingLoadW'])) $this->setVarByIdent($cLoad, 'pv_load_kw', $this->wToKw((float)$v['buildingLoadW']));
         if (isset($v['houseLoadW']))    $this->setVarByIdent($cLoad, 'pv_house_load_kw', $this->wToKw((float)$v['houseLoadW']));
