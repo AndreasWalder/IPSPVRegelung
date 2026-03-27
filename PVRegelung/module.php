@@ -122,6 +122,9 @@ declare(strict_types=1);
  * 2026-03-27: v1.52 — Rest-Überschuss-Anzeigen korrigiert:
  *                  • Bei allen Rest-Überschuss-Werten wird die Heizstab-Leistung
  *                    nicht mehr abgezogen, da sie bereits im Hausverbrauch steckt.
+ * 2026-03-27: v1.53 — WP-Überschuss-Output mit Heizstab-Kompensation:
+ *                  • Für den WP-Überschuss-Output werden je aktiver Heizstab-Stufe
+ *                    zusätzlich 3 kW addiert.
  */
 
 class PVRegelung extends IPSModule
@@ -517,7 +520,7 @@ class PVRegelung extends IPSModule
         $buildingLoadRawW = max(0.0, $pvTotalW + $gridW_raw + $battDischargeForHouseW);
         $houseLoadNoWbWpBattW = max(0.0, $buildingLoadRawW - $wallboxChargeW - $hpPowerForHouseW - $battChargeForHouseW);
 
-        $this->writeHeatpumpSurplusSignal($CFG, $gridW, $pvTotalW, $houseLoadNoWbWpBattW);
+        $this->writeHeatpumpSurplusSignal($CFG, $gridW, $pvTotalW, $houseLoadNoWbWpBattW, (int)($state['rod_stage'] ?? 0));
         $this->writeHeatpumpPvProductionSignal($CFG, $pvTotalW);
 
         $weeklyDaysSinceTarget = $this->readHeatingRodDaysSinceTargetReached($CFG);
@@ -2084,7 +2087,7 @@ class PVRegelung extends IPSModule
         IPS_SetVariableProfileValues($name, $min, $max, $step);
     }
 
-    private function writeHeatpumpSurplusSignal(array $CFG, float $gridW, float $pvTotalW, float $houseLoadNoWbWpBattW): void
+    private function writeHeatpumpSurplusSignal(array $CFG, float $gridW, float $pvTotalW, float $houseLoadNoWbWpBattW, int $rodStage): void
     {
         $outId = (int)($CFG['heatpump']['surplus_out_var'] ?? 0);
         if ($outId <= 0) return;
@@ -2097,7 +2100,8 @@ class PVRegelung extends IPSModule
         if ($signed) {
             $valueW = $gridW;
         } else {
-            $valueW = max(0.0, $pvTotalW - $houseLoadNoWbWpBattW);
+            $rodCompensationW = max(0, $rodStage) * 3000.0;
+            $valueW = max(0.0, $pvTotalW - $houseLoadNoWbWpBattW + $rodCompensationW);
             $valueW = ($valueW >= $deadbandW) ? $valueW : 0.0;
         }
 
