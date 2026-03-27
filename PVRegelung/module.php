@@ -96,6 +96,9 @@ declare(strict_types=1);
  * 2026-03-27: v1.44 — Wallbox-Phasenstabilität verbessert:
  *                  • Phasenentscheidung berücksichtigt bei laufender Wallbox die aktuelle WB-Istleistung
  *                    (Export + WB-Ist), um unnötiges 1P/3P-Pendeln zu vermeiden.
+ * 2026-03-27: v1.45 — Rest-Überschuss/Tendenz korrigiert:
+ *                  • Für die Rest-/Tendenz-Anzeige wird bei laufender Wallbox wieder die aktuelle
+ *                    WB-Istleistung berücksichtigt, damit freie Rampenreserve sichtbar bleibt.
  */
 
 class PVRegelung extends IPSModule
@@ -622,7 +625,10 @@ class PVRegelung extends IPSModule
 
             $wbTargetW = $this->wallboxPowerFromA($CFG, $state, $wbA);
             $reserveW = (float)($CFG['wallbox']['reserve_w'] ?? 0.0);
-            $restSurplusW = max(0.0, $wallboxAvailableBeforeWBW - $wbTargetW - $reserveW);
+            $wbCurrentPowerW = ($wbOn || (bool)($state['wb_is_on'] ?? false))
+                ? max(0.0, $this->readPowerToW($CFG['wallbox']['charge_power']))
+                : 0.0;
+            $restSurplusW = max(0.0, $wallboxAvailableBeforeWBW + $wbCurrentPowerW - $wbTargetW - $reserveW);
             [$decisionText, $forecastText, $detailsText] = $this->buildDecisionTexts([
                 'mode' => 'low_surplus',
                 'exportW' => $exportW,
@@ -716,7 +722,10 @@ class PVRegelung extends IPSModule
         $wbTargetW = $this->wallboxPowerFromA($CFG, $state, $wbA);
         $reserveW = (float)($CFG['wallbox']['reserve_w'] ?? 0.0);
 
-        $restSurplusW = max(0.0, $wallboxAvailableAfterPriorityW - $wbTargetW - $reserveW);
+        $wbCurrentPowerW = ($wbOn || (bool)($state['wb_is_on'] ?? false))
+            ? max(0.0, $this->readPowerToW($CFG['wallbox']['charge_power']))
+            : 0.0;
+        $restSurplusW = max(0.0, $wallboxAvailableAfterPriorityW + $wbCurrentPowerW - $wbTargetW - $reserveW);
         [$decisionText, $forecastText, $detailsText] = $this->buildDecisionTexts([
             'mode' => 'auto',
             'hpOn' => $hpOn,
