@@ -113,6 +113,11 @@ declare(strict_types=1);
  * 2026-03-27: v1.49 — Wallbox-SOC-Abschaltung vereinheitlicht:
  *                  • Laden der Wallbox wird in manuellem UND automatischem Modus beendet,
  *                    sobald Auto SOC (Ist) >= Manuelles Ziel-SOC ist.
+ * 2026-03-27: v1.50 — Heizstab-Rampenlogik geglättet:
+ *                  • Heizstab fährt jetzt sowohl beim Hoch- als auch beim Herunterregeln
+ *                    maximal eine Stufe pro Zyklus.
+ *                  • Bei Import-Limit/Low-Surplus wird nicht mehr abrupt auf 0 gesetzt,
+ *                    sondern stufenweise abgefahren (unter Beachtung Mindestlaufzeit).
  */
 
 class PVRegelung extends IPSModule
@@ -586,7 +591,8 @@ class PVRegelung extends IPSModule
         if ($importW > $maxImport && !$rodManualOn) {
             $state = $this->wallboxSoftOff($CFG, $state);
             $this->applyHeatpump($CFG, $state, false);
-            $this->applyHeatingRodStage($CFG, $state, 0);
+            [$rodStageImport, ] = $this->planHeatingRodStageForcedDown($CFG, $state, 0.0);
+            $this->applyHeatingRodStage($CFG, $state, $rodStageImport);
             $this->applyWallbox($CFG, $state, (bool)($state['wb_soft_on'] ?? false), (int)($state['wb_soft_a'] ?? 0));
             $softWbOn = (bool)($state['wb_soft_on'] ?? false);
             $softWbA = (int)($state['wb_soft_a'] ?? 0);
@@ -596,15 +602,15 @@ class PVRegelung extends IPSModule
                 'maxImportW' => $maxImport,
                 'carConnected' => $carConnected,
                 'hpOn' => false,
-                'rodStage' => 0,
+                'rodStage' => $rodStageImport,
                 'wbOn' => $softWbOn,
                 'wbA' => $softWbA,
                 'remainingW' => 0.0,
             ]);
             $this->updateUiVars($CFG, [
                 'restSurplusW' => 0.0,
-                'rodOn' => 0,
-                'rodStage' => 0,
+                'rodOn' => $rodStageImport > 0 ? 1 : 0,
+                'rodStage' => $rodStageImport,
                 'weeklyRodActive' => 0,
                 'decisionText' => $decisionText,
                 'forecastText' => $forecastText,
@@ -646,7 +652,8 @@ class PVRegelung extends IPSModule
             [$wbOn, $wbA] = $this->enforceWallboxSocStop($wbOn, $wbA, $carConnected, $carSoc, $manualTargetSoc);
 
             $this->applyHeatpump($CFG, $state, false);
-            $this->applyHeatingRodStage($CFG, $state, 0);
+            [$rodStageLowSurplus, ] = $this->planHeatingRodStageForcedDown($CFG, $state, $remainingW);
+            $this->applyHeatingRodStage($CFG, $state, $rodStageLowSurplus);
             $this->applyWallbox($CFG, $state, $wbOn, $wbA);
 
             $wbTargetW = $this->wallboxPowerFromA($CFG, $state, $wbA);
@@ -662,7 +669,7 @@ class PVRegelung extends IPSModule
                 'wbA' => $wbA,
                 'carConnected' => $carConnected,
                 'hpOn' => false,
-                'rodStage' => 0,
+                'rodStage' => $rodStageLowSurplus,
                 'wbOn' => $wbOn,
                 'importW' => $importW,
                 'batteryPowerW' => $battPowerW,
@@ -670,8 +677,8 @@ class PVRegelung extends IPSModule
 
             $this->updateUiVars($CFG, [
                 'hpOn' => 0,
-                'rodOn' => 0,
-                'rodStage' => 0,
+                'rodOn' => $rodStageLowSurplus > 0 ? 1 : 0,
+                'rodStage' => $rodStageLowSurplus,
                 'wbOn' => $wbOn ? 1 : 0,
                 'wbA' => $wbA,
                 'remainingW' => $remainingW,
@@ -884,13 +891,21 @@ class PVRegelung extends IPSModule
             return [$currentStage, max(0.0, $availableW - $usedW)];
         }
 
-        $targetStage = min($maxStage, (int)floor($availableW / $powerPerStage));
+        $targetStageByPower = min($maxStage, (int)floor($availableW / $powerPerStage));
+        $targetStage = $targetStageByPower;
 
         if ($isOn) {
             $offThresholdW = max(0.0, $minSurplus - $surplusHyst);
             if ($availableW < $offThresholdW) {
                 $targetStage = max(0, $currentStage - 1);
             }
+        }
+
+        // Immer nur eine Stufe pro Zyklus hoch-/runterfahren.
+        if ($targetStage > $currentStage) {
+            $targetStage = min($currentStage + 1, $targetStage);
+        } elseif ($targetStage < $currentStage) {
+            $targetStage = max($currentStage - 1, $targetStage);
         }
 
         if ($targetStage <= 0) {
@@ -901,6 +916,30 @@ class PVRegelung extends IPSModule
         $availableW = max(0.0, $availableW - $usedW);
 
         return [$targetStage, $availableW];
+    }
+
+    private function planHeatingRodStageForcedDown(array $CFG, array &$state, float $availableW): array
+    {
+        if (!($CFG['heating_rod']['enabled'] ?? false)) return [0, $availableW];
+
+        $maxStage = $this->maxHeatingRodStage($CFG);
+        if ($maxStage <= 0) return [0, $availableW];
+
+        $now = time();
+        $currentStage = max(0, min($maxStage, (int)($state['rod_stage'] ?? 0)));
+        if ($currentStage <= 0) return [0, $availableW];
+
+        $lastOn = (int)($state['rod_last_on_ts'] ?? 0);
+        $minOn = (int)($CFG['heating_rod']['min_on_seconds'] ?? 0);
+        $canTurnOff = (($now - $lastOn) >= $minOn);
+        if (!$canTurnOff) {
+            $usedW = $this->heatingRodPowerForStageW($CFG, $currentStage);
+            return [$currentStage, max(0.0, $availableW - $usedW)];
+        }
+
+        $targetStage = max(0, $currentStage - 1);
+        $usedW = $this->heatingRodPowerForStageW($CFG, $targetStage);
+        return [$targetStage, max(0.0, $availableW - $usedW)];
     }
 
     private function planWallboxRamped(array $CFG, array $state, float $availableW): array
