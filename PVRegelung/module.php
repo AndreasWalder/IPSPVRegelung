@@ -107,6 +107,9 @@ declare(strict_types=1);
  *                  • Kein Carry-Over mehr aus dem Vorzyklus.
  *                  • Die Zusatzreserve wird je Zyklus live aus aktuellem Export,
  *                    aktueller WB-Istleistung und aktuellem WB-Sollwert berechnet.
+ * 2026-03-27: v1.48 — Weekly-Heizstab an Fahrzeug-/SOC-Bedingung gekoppelt:
+ *                  • Weekly-Logik läuft nur, wenn entweder kein Fahrzeug angesteckt ist
+ *                    oder (bei angestecktem Fahrzeug) Manuelles Ziel-SOC >= Auto SOC (Ist) gilt.
  */
 
 class PVRegelung extends IPSModule
@@ -687,12 +690,14 @@ class PVRegelung extends IPSModule
         $rodAllowedByTemp = $boilerTemp >= (float)$CFG['boiler']['rod_min_start_temp_c'];
         $rodAutoMode = $this->readHeatingRodAutoMode($CFG);
         $rodTargetC = $this->readBoilerRodTargetC($CFG);
+        $weeklyAllowedByCarSoc = (!$carConnected) || ($manualTargetSoc >= $carSoc);
         if ($boilerTemp >= $rodTargetC) {
             $state['rod_last_target_reached_ts'] = time();
         }
         [$rodDaysDisplay, $rodLastTargetStatus] = $this->buildRodLastTargetUiState($state);
         $needWeeklyRod = $rodAutoMode
             && $weeklyWindow
+            && $weeklyAllowedByCarSoc
             && $rodAllowedByTemp
             && ($boilerTemp < ($rodTargetC - 0.2));
 
