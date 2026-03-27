@@ -685,7 +685,27 @@ class PVRegelung extends IPSModule
 
         $rodOn = $rodStage > 0;
         $wallboxAvailableAfterPriorityW = max(0.0, $remainingW + $batteryWallboxAssistW - $batteryWallboxPenaltyW);
-        [$wbOn, $wbA, $state] = $this->planWallboxRamped($CFG, $state, $wallboxAvailableAfterPriorityW);
+        [$wbPreviewOn] = $this->planWallboxRamped($CFG, $state, $wallboxAvailableAfterPriorityW);
+        $wallboxHasPriority = $carConnected && $wbPreviewOn;
+
+        if ($wallboxHasPriority) {
+            $remainingW = max(0.0, $remainingW + $this->heatingRodPowerForStageW($CFG, $rodStage));
+            $wallboxAvailableAfterPriorityW = max(0.0, $remainingW + $batteryWallboxAssistW - $batteryWallboxPenaltyW);
+            [$wbOn, $wbA, $state] = $this->planWallboxRamped($CFG, $state, $wallboxAvailableAfterPriorityW);
+            $rodStage = 0;
+            $rodOn = false;
+        } else {
+            $rodOn = $rodStage > 0;
+            [$wbOn, $wbA, $state] = $this->planWallboxRamped($CFG, $state, $wallboxAvailableAfterPriorityW);
+        }
+
+        if ($carConnected && $wbOn && $rodStage > 0) {
+            $remainingW = max(0.0, $remainingW + $this->heatingRodPowerForStageW($CFG, $rodStage));
+            $wallboxAvailableAfterPriorityW = max(0.0, $remainingW + $batteryWallboxAssistW - $batteryWallboxPenaltyW);
+            [$wbOn, $wbA, $state] = $this->planWallboxRamped($CFG, $state, $wallboxAvailableAfterPriorityW);
+            $rodStage = 0;
+            $rodOn = false;
+        }
 
         if ($carConnected && $wbOn && $rodStage > 0) {
             $remainingW = max(0.0, $remainingW + $this->heatingRodPowerForStageW($CFG, $rodStage));
