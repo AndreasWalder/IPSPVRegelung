@@ -707,14 +707,6 @@ class PVRegelung extends IPSModule
             $rodOn = false;
         }
 
-        if ($carConnected && $wbOn && $rodStage > 0) {
-            $remainingW = max(0.0, $remainingW + $this->heatingRodPowerForStageW($CFG, $rodStage));
-            $wallboxAvailableAfterPriorityW = max(0.0, $remainingW + $batteryWallboxAssistW - $batteryWallboxPenaltyW);
-            [$wbOn, $wbA, $state] = $this->planWallboxRamped($CFG, $state, $wallboxAvailableAfterPriorityW);
-            $rodStage = 0;
-            $rodOn = false;
-        }
-
         $this->applyHeatpump($CFG, $state, $hpOn);
         $this->applyHeatingRodStage($CFG, $state, $rodStage);
         $this->applyWallbox($CFG, $state, $wbOn, $wbA);
@@ -732,6 +724,7 @@ class PVRegelung extends IPSModule
             'wbOn' => $wbOn,
             'wbA' => $wbA,
             'remainingW' => $remainingW,
+            'restSurplusW' => $restSurplusW,
             'carConnected' => $carConnected,
             'importW' => $importW,
             'batteryPowerW' => $battPowerW,
@@ -1533,6 +1526,7 @@ class PVRegelung extends IPSModule
         $wbOn = (bool)($ctx['wbOn'] ?? false);
         $wbA = max(0, (int)($ctx['wbA'] ?? 0));
         $remainingKw = round(((float)($ctx['remainingW'] ?? 0.0)) / 1000.0, 2);
+        $restSurplusKw = round(((float)($ctx['restSurplusW'] ?? $ctx['remainingW'] ?? 0.0)) / 1000.0, 2);
 
         if ($mode === 'manual_wb') {
             if (!$carConnected) {
@@ -1620,11 +1614,11 @@ class PVRegelung extends IPSModule
         $parts[] = $wbOn ? 'Wallbox EIN' : 'Wallbox AUS';
 
         $decision = 'Auto: ' . implode(', ', $parts) . '.';
-        $forecast = $remainingKw > 0.5
+        $forecast = $restSurplusKw > 0.5
             ? ($carConnected
-                ? sprintf('Bei stabilen Werten ist als Nächstes mehr Wallbox-Leistung möglich (Rest %.2f kW).', $remainingKw)
-                : sprintf('Bei stabilen Werten bleibt die Wallbox ohne Fahrzeug außen vor (Rest %.2f kW).', $remainingKw))
-            : sprintf('Bei stabilen Werten bleibt die Regelung etwa so (Rest %.2f kW).', $remainingKw);
+                ? sprintf('Bei stabilen Werten ist als Nächstes mehr Wallbox-Leistung möglich (Rest %.2f kW).', $restSurplusKw)
+                : sprintf('Bei stabilen Werten bleibt die Wallbox ohne Fahrzeug außen vor (Rest %.2f kW).', $restSurplusKw))
+            : sprintf('Bei stabilen Werten bleibt die Regelung etwa so (Rest %.2f kW).', $restSurplusKw);
 
         $details = implode("\n", [
             'Regelstatus (automatisch):',
@@ -1633,7 +1627,7 @@ class PVRegelung extends IPSModule
             $carConnected
                 ? sprintf('• Wallbox: %s%s.', $wbOn ? 'EIN' : 'AUS', $wbOn ? (' (' . $wbA . ' A)') : '')
                 : '• Wallbox: AUS (kein Fahrzeug angesteckt).',
-            sprintf('• Rest-Überschuss nach Planung: %.2f kW.', $remainingKw),
+            sprintf('• Rest-Überschuss nach Planung: %.2f kW.', $restSurplusKw),
             $gridBatteryHint,
         ]);
 
