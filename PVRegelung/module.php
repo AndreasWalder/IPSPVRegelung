@@ -128,6 +128,15 @@ declare(strict_types=1);
  * 2026-03-27: v1.54 — Rest-Überschuss-Transparenz erweitert:
  *                  • Rest-Überschuss (Soll ~0) und Rest vor WB ohne 3-kW-Zuschlag.
  *                  • Zusätzliche Rest-Variablen je Verbraucher ergänzt (nach WP, nach Heizstab, vor WB).
+ * 2026-03-27: v1.55 — Wallbox-AUS bei weiter fallendem Überschuss verlässlicher:
+ *                  • Wenn die Wallbox bereits auf 0 A heruntergeregelt wurde und weiterhin
+ *                    nicht genug Überschuss für Mindeststrom vorhanden ist, wird sie (nach
+ *                    Mindestlaufzeit) direkt ausgeschaltet statt bis zum Soft-Off-Timeout aktiv zu bleiben.
+ * 2026-03-27: v1.56 — Wallbox-Abregelung unter Mindeststrom korrigiert:
+ *                  • Beim Herunterregeln wird kein ungültiger Zwischenwert unterhalb Mindeststrom
+ *                    (z. B. 5 A bei min. 6 A) mehr gesetzt.
+ *                  • Fällt der Sollstrom unter den Mindeststrom, springt die Regelung direkt auf 0 A
+ *                    und kann die Wallbox anschließend sauber ausschalten.
  */
 
 class PVRegelung extends IPSModule
@@ -1094,12 +1103,23 @@ class PVRegelung extends IPSModule
                 ? $this->moveTowardsInt($curA, 0, $rampUp, $rampDown)
                 : $curA;
 
+            if ($newA > 0 && $newA < $minA) {
+                $newA = 0;
+            }
+
             if ($newA !== $curA) {
                 $state['wb_last_control_change_ts'] = $now;
             }
 
             if ($newA > 0) {
                 return [true, $newA, $state];
+            }
+
+            // Bereits auf 0 A heruntergeregelt und weiterhin zu wenig Überschuss:
+            // Nach erfüllter Mindestlaufzeit direkt AUS, damit die Wallbox nicht
+            // unnötig "aktiv" bleibt, obwohl kein Mindestladestrom mehr möglich ist.
+            if ($canTurnOff) {
+                return [false, 0, $state];
             }
 
             if ((($now - $defSince) >= $grace)) {
@@ -1181,6 +1201,7 @@ class PVRegelung extends IPSModule
         $setA = (int)($CFG['wallbox']['set_current_a_var'] ?? 0);
         if ($enableVar <= 0 || $setA <= 0) return $state;
 
+        $minA = max(1, (int)($CFG['wallbox']['min_a'] ?? 6));
         $rampDown = max(1, (int)($CFG['wallbox']['ramp_down_a_per_loop'] ?? 2));
         $grace = max(0, (int)($CFG['wallbox']['soft_off_grace_seconds'] ?? 120));
 
@@ -1201,6 +1222,9 @@ class PVRegelung extends IPSModule
 
         $curA = (int)$this->readVar($setA, 0);
         $newA = max(0, $curA - $rampDown);
+        if ($newA > 0 && $newA < $minA) {
+            $newA = 0;
+        }
 
         if ($newA > 0) {
             $state['wb_soft_on'] = true;
