@@ -116,8 +116,6 @@ declare(strict_types=1);
  * 2026-03-27: v1.50 — Heizstab-Rampenlogik geglättet:
  *                  • Heizstab fährt jetzt sowohl beim Hoch- als auch beim Herunterregeln
  *                    maximal eine Stufe pro Zyklus.
- *                  • Bei Import-Limit/Low-Surplus wird nicht mehr abrupt auf 0 gesetzt,
- *                    sondern stufenweise abgefahren (unter Beachtung Mindestlaufzeit).
  */
 
 class PVRegelung extends IPSModule
