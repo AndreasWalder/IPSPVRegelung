@@ -89,6 +89,13 @@ declare(strict_types=1);
  *                  • Batterie-Entladung wird bereits ab >0 W konsequent geblockt
  *                  • Bei eindeutig genügend PV-Leistung wird direkt auf Maximalstrom geregelt
  *                  • Entscheidungstexte nennen explizit Netz-/Akku-Status als Begründung
+ * 2026-03-27: v1.43 — Wallbox/Heizstab-Kopplung verbessert:
+ *                  • Wenn Fahrzeug angesteckt ist und die Wallbox laden kann, werden Heizstäbe unterdrückt
+ *                    (Wallbox hat dann Vorrang).
+ *                  • Wallbox-Leistung wird dabei weiterhin phasenrichtig berechnet (1P/3P bei gleichem Strom).
+ * 2026-03-27: v1.44 — Wallbox-Phasenstabilität verbessert:
+ *                  • Phasenentscheidung berücksichtigt bei laufender Wallbox die aktuelle WB-Istleistung
+ *                    (Export + WB-Ist), um unnötiges 1P/3P-Pendeln zu vermeiden.
  */
 
 class PVRegelung extends IPSModule
@@ -677,9 +684,16 @@ class PVRegelung extends IPSModule
         }
 
         $rodOn = $rodStage > 0;
-
         $wallboxAvailableAfterPriorityW = max(0.0, $remainingW + $batteryWallboxAssistW - $batteryWallboxPenaltyW);
         [$wbOn, $wbA, $state] = $this->planWallboxRamped($CFG, $state, $wallboxAvailableAfterPriorityW);
+
+        if ($carConnected && $wbOn && $rodStage > 0) {
+            $remainingW = max(0.0, $remainingW + $this->heatingRodPowerForStageW($CFG, $rodStage));
+            $wallboxAvailableAfterPriorityW = max(0.0, $remainingW + $batteryWallboxAssistW - $batteryWallboxPenaltyW);
+            [$wbOn, $wbA, $state] = $this->planWallboxRamped($CFG, $state, $wallboxAvailableAfterPriorityW);
+            $rodStage = 0;
+            $rodOn = false;
+        }
 
         $this->applyHeatpump($CFG, $state, $hpOn);
         $this->applyHeatingRodStage($CFG, $state, $rodStage);
@@ -853,7 +867,10 @@ class PVRegelung extends IPSModule
         $surplusHystW = max(0.0, (float)($CFG['wallbox']['surplus_hysteresis_w'] ?? 0.0));
         $controlHoldS = max(0, (int)($CFG['wallbox']['control_min_hold_seconds'] ?? 0));
 
-        $availableForPhaseDecisionW = max(0.0, $availableW);
+        $isOn = (bool)($state['wb_is_on'] ?? false);
+        $wbCurrentPowerW = $isOn ? max(0.0, $this->readPowerToW($CFG['wallbox']['charge_power'])) : 0.0;
+
+        $availableForPhaseDecisionW = max(0.0, $availableW + $wbCurrentPowerW);
         $availableW = max(0.0, $availableW - $reserve);
 
         $state = $this->ensureWallboxPhaseState($CFG, $state);
@@ -870,14 +887,12 @@ class PVRegelung extends IPSModule
         $rampDown = max(1, (int)($CFG['wallbox']['ramp_down_a_per_loop'] ?? 2));
         $grace = max(0, (int)($CFG['wallbox']['soft_off_grace_seconds'] ?? 120));
 
-        $isOn = (bool)($state['wb_is_on'] ?? false);
         $lastOn  = (int)($state['wb_last_on_ts'] ?? 0);
         $lastOff = (int)($state['wb_last_off_ts'] ?? 0);
         $now = time();
 
         $availableControlW = $availableW;
         if ($isOn) {
-            $wbCurrentPowerW = max(0.0, $this->readPowerToW($CFG['wallbox']['charge_power']));
             $availableControlW += $wbCurrentPowerW;
         }
 
