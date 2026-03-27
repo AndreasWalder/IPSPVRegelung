@@ -89,6 +89,10 @@ declare(strict_types=1);
  *                  • Batterie-Entladung wird bereits ab >0 W konsequent geblockt
  *                  • Bei eindeutig genügend PV-Leistung wird direkt auf Maximalstrom geregelt
  *                  • Entscheidungstexte nennen explizit Netz-/Akku-Status als Begründung
+ * 2026-03-27: v1.43 — Wallbox/Heizstab-Kopplung verbessert:
+ *                  • Wenn Fahrzeug angesteckt ist und die Wallbox laden kann, werden Heizstäbe unterdrückt
+ *                    (Wallbox hat dann Vorrang).
+ *                  • Wallbox-Leistung wird dabei weiterhin phasenrichtig berechnet (1P/3P bei gleichem Strom).
  */
 
 class PVRegelung extends IPSModule
@@ -676,10 +680,20 @@ class PVRegelung extends IPSModule
             [$rodStage, $remainingW] = $this->planHeatingRodStage($CFG, $state, $needWeeklyRod, $boilerTemp, $remainingW);
         }
 
-        $rodOn = $rodStage > 0;
-
         $wallboxAvailableAfterPriorityW = max(0.0, $remainingW + $batteryWallboxAssistW - $batteryWallboxPenaltyW);
-        [$wbOn, $wbA, $state] = $this->planWallboxRamped($CFG, $state, $wallboxAvailableAfterPriorityW);
+        [$wbPreviewOn] = $this->planWallboxRamped($CFG, $state, $wallboxAvailableAfterPriorityW);
+        $wallboxHasPriority = $carConnected && $wbPreviewOn;
+
+        if ($wallboxHasPriority) {
+            $remainingW = max(0.0, $remainingW + $this->heatingRodPowerForStageW($CFG, $rodStage));
+            $wallboxAvailableAfterPriorityW = max(0.0, $remainingW + $batteryWallboxAssistW - $batteryWallboxPenaltyW);
+            [$wbOn, $wbA, $state] = $this->planWallboxRamped($CFG, $state, $wallboxAvailableAfterPriorityW);
+            $rodStage = 0;
+            $rodOn = false;
+        } else {
+            $rodOn = $rodStage > 0;
+            [$wbOn, $wbA, $state] = $this->planWallboxRamped($CFG, $state, $wallboxAvailableAfterPriorityW);
+        }
 
         $this->applyHeatpump($CFG, $state, $hpOn);
         $this->applyHeatingRodStage($CFG, $state, $rodStage);
