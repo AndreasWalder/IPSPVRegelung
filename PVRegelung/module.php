@@ -116,6 +116,9 @@ declare(strict_types=1);
  * 2026-03-27: v1.50 — Heizstab-Rampenlogik geglättet:
  *                  • Heizstab fährt jetzt sowohl beim Hoch- als auch beim Herunterregeln
  *                    maximal eine Stufe pro Zyklus.
+ * 2026-03-27: v1.51 — Wärmepumpen-Überschusssignal korrigiert:
+ *                  • Heizstab-Leistung wird dort nicht mehr separat abgezogen,
+ *                    da sie bereits im Hausverbrauch enthalten ist.
  */
 
 class PVRegelung extends IPSModule
@@ -503,8 +506,6 @@ class PVRegelung extends IPSModule
         $hpRunning = (bool)$this->readVar((int)$CFG['heatpump']['running_var'], false);
         $hpPowerW  = $this->readPowerToW($CFG['heatpump']['power_in']);
 
-        $rodPowerW = $this->heatingRodPowerForStageW($CFG, (int)($state['rod_stage'] ?? 0));
-
         $hpPowerForHouseW = $hpRunning ? $hpPowerW : 0.0;
         $battChargeForHouseW = max(0.0, $battPowerW);
         $battDischargeForHouseW = max(0.0, -$battPowerW);
@@ -513,7 +514,7 @@ class PVRegelung extends IPSModule
         $buildingLoadRawW = max(0.0, $pvTotalW + $gridW_raw + $battDischargeForHouseW);
         $houseLoadNoWbWpBattW = max(0.0, $buildingLoadRawW - $wallboxChargeW - $hpPowerForHouseW - $battChargeForHouseW);
 
-        $this->writeHeatpumpSurplusSignal($CFG, $gridW, $pvTotalW, $houseLoadNoWbWpBattW, $rodPowerW);
+        $this->writeHeatpumpSurplusSignal($CFG, $gridW, $pvTotalW, $houseLoadNoWbWpBattW);
         $this->writeHeatpumpPvProductionSignal($CFG, $pvTotalW);
 
         $weeklyDaysSinceTarget = $this->readHeatingRodDaysSinceTargetReached($CFG);
@@ -2078,7 +2079,7 @@ class PVRegelung extends IPSModule
         IPS_SetVariableProfileValues($name, $min, $max, $step);
     }
 
-    private function writeHeatpumpSurplusSignal(array $CFG, float $gridW, float $pvTotalW, float $houseLoadNoWbWpBattW, float $rodPowerW): void
+    private function writeHeatpumpSurplusSignal(array $CFG, float $gridW, float $pvTotalW, float $houseLoadNoWbWpBattW): void
     {
         $outId = (int)($CFG['heatpump']['surplus_out_var'] ?? 0);
         if ($outId <= 0) return;
@@ -2091,7 +2092,7 @@ class PVRegelung extends IPSModule
         if ($signed) {
             $valueW = $gridW;
         } else {
-            $valueW = max(0.0, $pvTotalW - $houseLoadNoWbWpBattW - $rodPowerW);
+            $valueW = max(0.0, $pvTotalW - $houseLoadNoWbWpBattW);
             $valueW = ($valueW >= $deadbandW) ? $valueW : 0.0;
         }
 
