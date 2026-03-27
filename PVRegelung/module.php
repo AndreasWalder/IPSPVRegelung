@@ -720,7 +720,8 @@ class PVRegelung extends IPSModule
 
         $rodOn = $rodStage > 0;
         $wallboxAvailableAfterPriorityW = max(0.0, $remainingW + $wbLiveReserveW + $batteryWallboxAssistW - $batteryWallboxPenaltyW);
-        [$wbPreviewOn] = $this->planWallboxRamped($CFG, $state, $wallboxAvailableAfterPriorityW);
+        [$wbPreviewOn, $wbPreviewA] = $this->planWallboxRamped($CFG, $state, $wallboxAvailableAfterPriorityW);
+        [$wbPreviewOn, $wbPreviewA] = $this->enforceWallboxSocStop($wbPreviewOn, $wbPreviewA, $carConnected, $carSoc, $manualTargetSoc);
         $wallboxHasPriority = $carConnected && $wbPreviewOn;
 
         if ($wallboxHasPriority) {
