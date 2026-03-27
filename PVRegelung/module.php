@@ -110,6 +110,9 @@ declare(strict_types=1);
  * 2026-03-27: v1.48 — Weekly-Heizstab an Fahrzeug-/SOC-Bedingung gekoppelt:
  *                  • Weekly-Logik läuft nur, wenn entweder kein Fahrzeug angesteckt ist
  *                    oder (bei angestecktem Fahrzeug) Manuelles Ziel-SOC >= Auto SOC (Ist) gilt.
+ * 2026-03-27: v1.49 — Wallbox-SOC-Abschaltung vereinheitlicht:
+ *                  • Laden der Wallbox wird in manuellem UND automatischem Modus beendet,
+ *                    sobald Auto SOC (Ist) >= Manuelles Ziel-SOC ist.
  */
 
 class PVRegelung extends IPSModule
@@ -541,6 +544,7 @@ class PVRegelung extends IPSModule
 
         if ($manualActive) {
             [$wbOn, $wbA, $state] = $this->planWallboxManualPower($CFG, $state, $manualPowerW);
+            [$wbOn, $wbA] = $this->enforceWallboxSocStop($wbOn, $wbA, $carConnected, $carSoc, $manualTargetSoc);
             $this->applyHeatpump($CFG, $state, false);
             $this->applyHeatingRodStage($CFG, $state, 0);
             $this->applyWallbox($CFG, $state, $wbOn, $wbA);
@@ -639,6 +643,7 @@ class PVRegelung extends IPSModule
 
         if ($exportW < $deadband && !$rodManualOn) {
             [$wbOn, $wbA, $state] = $this->planWallboxRamped($CFG, $state, $wallboxAvailableBeforeWBW);
+            [$wbOn, $wbA] = $this->enforceWallboxSocStop($wbOn, $wbA, $carConnected, $carSoc, $manualTargetSoc);
 
             $this->applyHeatpump($CFG, $state, false);
             $this->applyHeatingRodStage($CFG, $state, 0);
@@ -722,17 +727,20 @@ class PVRegelung extends IPSModule
             $remainingW = max(0.0, $remainingW + $this->heatingRodPowerForStageW($CFG, $rodStage));
             $wallboxAvailableAfterPriorityW = max(0.0, $remainingW + $wbLiveReserveW + $batteryWallboxAssistW - $batteryWallboxPenaltyW);
             [$wbOn, $wbA, $state] = $this->planWallboxRamped($CFG, $state, $wallboxAvailableAfterPriorityW);
+            [$wbOn, $wbA] = $this->enforceWallboxSocStop($wbOn, $wbA, $carConnected, $carSoc, $manualTargetSoc);
             $rodStage = 0;
             $rodOn = false;
         } else {
             $rodOn = $rodStage > 0;
             [$wbOn, $wbA, $state] = $this->planWallboxRamped($CFG, $state, $wallboxAvailableAfterPriorityW);
+            [$wbOn, $wbA] = $this->enforceWallboxSocStop($wbOn, $wbA, $carConnected, $carSoc, $manualTargetSoc);
         }
 
         if ($carConnected && $wbOn && $rodStage > 0) {
             $remainingW = max(0.0, $remainingW + $this->heatingRodPowerForStageW($CFG, $rodStage));
             $wallboxAvailableAfterPriorityW = max(0.0, $remainingW + $wbLiveReserveW + $batteryWallboxAssistW - $batteryWallboxPenaltyW);
             [$wbOn, $wbA, $state] = $this->planWallboxRamped($CFG, $state, $wallboxAvailableAfterPriorityW);
+            [$wbOn, $wbA] = $this->enforceWallboxSocStop($wbOn, $wbA, $carConnected, $carSoc, $manualTargetSoc);
             $rodStage = 0;
             $rodOn = false;
         }
@@ -1153,6 +1161,20 @@ class PVRegelung extends IPSModule
         if ($target > $current) return min($target, $current + $upStep);
         if ($target < $current) return max($target, $current - $downStep);
         return $current;
+    }
+
+    private function enforceWallboxSocStop(bool $wbOn, int $wbA, bool $carConnected, float $carSoc, float $manualTargetSoc): array
+    {
+        if (!$carConnected) {
+            return [$wbOn, $wbA];
+        }
+        if ($manualTargetSoc <= 0.0) {
+            return [$wbOn, $wbA];
+        }
+        if ($carSoc >= $manualTargetSoc) {
+            return [false, 0];
+        }
+        return [$wbOn, $wbA];
     }
 
     private function batteryChargeAssistForWallboxW(array $CFG, float $soc, float $battPowerW): float
