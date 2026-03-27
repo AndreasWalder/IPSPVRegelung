@@ -571,6 +571,7 @@ class PVRegelung extends IPSModule
                 'detailsText' => $detailsText,
             ]);
 
+            $state['wb_rest_surplus_w'] = 0.0;
             $this->saveState($state);
             return;
         }
@@ -602,6 +603,7 @@ class PVRegelung extends IPSModule
                 'forecastText' => $forecastText,
                 'detailsText' => $detailsText,
             ]);
+            $state['wb_rest_surplus_w'] = 0.0;
             $this->saveState($state);
             return;
         }
@@ -675,6 +677,7 @@ class PVRegelung extends IPSModule
                 'detailsText' => $detailsText,
             ]);
 
+            $state['wb_rest_surplus_w'] = $restSurplusW;
             $this->saveState($state);
             return;
         }
@@ -773,6 +776,7 @@ class PVRegelung extends IPSModule
             'detailsText' => $detailsText,
         ]);
 
+        $state['wb_rest_surplus_w'] = $restSurplusW;
         $this->saveState($state);
     }
 
